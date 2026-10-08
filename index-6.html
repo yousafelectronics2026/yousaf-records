@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="Private shop records for Yousaf Electronics">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<script>(function(){try{var m=matchMedia.bind(window),sys=m("(prefers-reduced-motion: reduce)").matches,v=localStorage.getItem("ymo");window._mo0=sys;var on=v==null?!sys:v=="1";window._mo=on;var h=document.documentElement;if(v=="1")h.classList.add("fm");if(v=="0")h.classList.add("nm");if(v!=null){window.matchMedia=function(q){return /reduced-motion/.test(q)?{matches:!on,media:q,addListener:function(){},removeListener:function(){}}:m(q)}}}catch(e){}})()</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ====== EDIT THESE TWO LINES (Supabase -> Project Settings -> API) ====== */
+window.SB_URL="https://hnaounpfamnydqwtakdk.supabase.co";
+window.SB_KEY="sb_publishable_pXlEDtsVaMDxmkab31dkrQ_HkrvURvU";
+/* ======================================================================== */
+(function(){
+  var cfgOk=!/YOUR-/.test(window.SB_URL+window.SB_KEY)&&!!window.supabase;
+  var sb=cfgOk?supabase.createClient(window.SB_URL,window.SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}}):null;
+  var ROLE=null,res,AUTH=new Promise(function(r){res=r});
+  window.SBX={sb:sb,cfgOk:cfgOk,role:function(){return ROLE},afterLogin:function(user,role){
+      ROLE=role;res(true);
+      try{sb.storage.from("docs").list("",{limit:1}).then(function(r){
+        if(!r.error)return;var m=String(r.error.message||"");
+        window.UPLOAD_MSG=/not found/i.test(m)?"Storage bucket docs is missing. Run SQL part 2 (or create a private bucket named docs). / اسٹوریج docs موجود نہیں۔ SQL کا حصہ 2 چلائیں (یا docs نام کا نجی bucket بنائیں)۔":m;
+      },function(){})}catch(e){}
+    }};
+  function err(e){var c=e&&e.code;return{code:(c=="42501"||c=="PGRST301")?"invalid_argument":"upstream_error",message:(e&&e.message)||""}}
+  function mk(id,data){return{id:id,exists:true,data:function(){return data}}}
+  function snap(ch){return{metadata:{fromCache:false},docChanges:function(){return ch}}}
+  function hex32(){var a=new Uint8Array(16);crypto.getRandomValues(a);return Array.prototype.map.call(a,function(x){return("0"+x.toString(16)).slice(-2)}).join("")}
+  var db={
+    collection:function(name){return{onSnapshot:function(cb,eb){
+      sb.channel("rt-"+name).on("postgres_changes",{event:"*",schema:"public",table:name},function(p){
+        var del=p.eventType=="DELETE",row=del?p.old:p.new;if(!row||!row.id)return;
+        cb(snap([{type:p.eventType=="INSERT"?"added":del?"removed":"modified",doc:mk(row.id,row.data)}]));
+      }).subscribe();
+      sb.from(name).select("id,data").then(function(r){
+        if(r.error){if(eb)eb(err(r.error));return}
+        cb(snap((r.data||[]).map(function(x){return{type:"added",doc:mk(x.id,x.data)}})));
+      });
+    }}},
+    doc:function(path){
+      var p=path.split("/"),tb=p[0],id=p[1];
+      return{
+        set:function(o){return sb.from(tb).upsert({id:id,data:o},{onConflict:"id"}).then(function(r){if(r.error)throw err(r.error)})},
+        delete:function(){
+          return sb.from(tb).delete().eq("id",id).select("id").then(function(r){
+            if(r.error)throw err(r.error);
+            if(r.data&&r.data.length)return;
+            return sb.from(tb).select("id").eq("id",id).then(function(c){
+              if(c.data&&c.data.length)throw{code:"invalid_argument",message:"Only the owner can delete this"};
+            });
+          });
+        },
+        onSnapshot:function(cb,eb){
+          function one(r){if(r.error){if(eb)eb(err(r.error));return}var row=r.data&&r.data[0];cb(row?mk(row.id,row.data):{exists:false})}
+          sb.channel("rt1-"+tb+id).on("postgres_changes",{event:"*",schema:"public",table:tb},function(q){var row=q.new;if(row&&row.id==id)cb(mk(row.id,row.data))}).subscribe();
+          sb.from(tb).select("id,data").eq("id",id).then(one);
+        }
+      };
+    }
+  };
+  var AS={
+    upload:function(blob,opts){
+      var id=hex32();
+      return sb.storage.from("docs").upload(id,blob,{contentType:(opts&&opts.type)||blob.type,upsert:false}).then(function(r){
+        if(r.error)throw{code:/size|large|exceed/i.test(r.error.message)?"too_large":"upstream_error",message:r.error.message};
+        return{id:id};
+      });
+    },
+    delete:function(id){return sb.storage.from("docs").remove([id]).then(function(r){if(r.error)throw err(r.error);return{deleted:true}})}
+  };
+  window.blobUrl=function(id){return sb.storage.from("docs").createSignedUrl(id,3600).then(function(r){if(r.error||!r.data)throw r.error||0;return r.data.signedUrl})};
+  window.claude={use:function(n){
+    if(n=="downloads")return Promise.resolve({save:function(o){
+      var b=o.data instanceof Blob?o.data:new Blob([o.data]),a=document.createElement("a");
+      a.href=URL.createObjectURL(b);a.download=o.filename;document.body.appendChild(a);a.click();
+      setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1500);return Promise.resolve({status:"saved"});
+    }});
+    if(!sb)return Promise.resolve(null);
+    if(n=="db")return AUTH.then(function(){return ROLE?db:null});
+    if(n=="assets")return AUTH.then(function(){return ROLE?AS:null});
+    if(n=="user")return AUTH.then(function(){return{can:function(){return Promise.resolve(!!ROLE)},isOwner:function(){return ROLE=="owner"}}});
+    return Promise.resolve(null);
+  }};
+})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Yousaf Electronics | Shop Records</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--cd:#161410;--bd:rgba(212,175,55,.3);--g:#d4af37;--g2:#f5d77a;--tx:#f4f1ea;--mu:#a8a392;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.6 Inter,"Noto Nastaliq Urdu",sans-serif}
+[dir=rtl] body{font-family:"Noto Nastaliq Urdu",Inter,sans-serif;line-height:2}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:#0a0a0aee;z-index:5}
+header b{color:var(--g);font-size:17px}
+#tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;border-bottom:1px solid var(--bd)}
+#tabs button{white-space:nowrap}
+.b{background:transparent;color:var(--g);border:1px solid var(--g);border-radius:10px;padding:7px 13px;font:inherit;cursor:pointer}
+.b.on,.b.p{background:linear-gradient(90deg,var(--g),var(--g2));color:#111;border:0;font-weight:600}
+.b.r{color:#ff8a7a;border-color:#ff8a7a}
+.b.s{padding:3px 9px;font-size:13px}
+main{padding:16px;max-width:1000px;margin:auto}
+h2{color:var(--g2);margin-bottom:12px;font-size:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.k{background:var(--cd);border:1px solid var(--bd);border-radius:14px;padding:14px}
+.k small{color:var(--mu);display:block}.k b{font-size:20px;color:var(--g)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:start;white-space:nowrap}
+th{color:var(--g);font-weight:600}
+.red{color:#ff8a7a}.grn{color:#7ee0a0}
+input,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid var(--bd);background:#111;color:var(--tx);font:inherit}
+.bar{display:flex;gap:10px;margin-bottom:12px}
+#m{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;overflow:auto;padding:16px;z-index:20}
+#m>div{background:var(--cd);border:1px solid var(--g);border-radius:16px;max-width:640px;margin:auto;padding:18px}
+label{display:block;margin-bottom:10px;color:var(--mu);font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.paper{background:#fff;color:#111;border-radius:8px;padding:18px}
+.paper th{color:#7a5d00}.paper td,.paper th{border-color:#ddd}
+.paper h3{color:#111}.paper small{color:#555}
+#gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:grid;place-items:center;padding:20px}
+#gate div{max-width:320px;width:100%;text-align:center}
+@media print{body *{visibility:hidden}#inv,#inv *{visibility:visible}#inv{position:absolute;left:0;top:0;width:100%}.np{display:none!important}}
+
+#dust{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#cg{position:fixed;left:0;top:0;width:320px;height:320px;margin:-160px 0 0 -160px;border-radius:50%;background:radial-gradient(circle,rgba(212,175,55,.14),transparent 65%);pointer-events:none;z-index:1;opacity:0;transition:opacity .4s}
+#tabs,main{position:relative;z-index:2}
+header b{background:linear-gradient(90deg,#d4af37,#f5d77a,#d4af37);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 4s linear infinite}
+@keyframes sh{to{background-position:200% 0}}
+@keyframes in{from{opacity:0;transform:translateY(22px)}}
+@keyframes pop{from{opacity:0;transform:scale(.92) translateY(16px)}}
+@keyframes fd{from{opacity:0}}
+@keyframes rw{from{opacity:0;transform:translateX(-14px)}}
+#main>*{animation:in .5s both}
+#main>*:nth-child(2){animation-delay:.08s}#main>*:nth-child(3){animation-delay:.16s}
+.grid .k{animation:in .6s both}
+.grid .k:nth-child(2){animation-delay:.07s}.grid .k:nth-child(3){animation-delay:.14s}.grid .k:nth-child(4){animation-delay:.21s}.grid .k:nth-child(5){animation-delay:.28s}.grid .k:nth-child(6){animation-delay:.35s}
+.k{transition:border-color .3s,box-shadow .3s;will-change:transform}
+.k:hover{border-color:var(--g);box-shadow:0 10px 30px rgba(212,175,55,.15)}
+tr{animation:rw .4s both}
+#list tr{animation:none}
+tr:nth-child(2){animation-delay:.04s}tr:nth-child(3){animation-delay:.08s}tr:nth-child(4){animation-delay:.12s}tr:nth-child(5){animation-delay:.16s}tr:nth-child(6){animation-delay:.2s}tr:nth-child(n+7){animation-delay:.24s}
+tbody tr,tr{transition:background .25s}
+tr:hover td{background:rgba(212,175,55,.06)}
+.b{transition:transform .2s,box-shadow .25s,background .25s,color .25s}
+.b:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(212,175,55,.25)}
+.b:active{transform:scale(.94)}
+#tabs .b.on{animation:pop .35s both}
+#m{animation:fd .25s both}
+#m>div{animation:pop .35s both}
+.pb{height:8px;border-radius:8px;background:rgba(255,255,255,.1);overflow:hidden;margin:10px 0}
+.pb i{display:block;height:100%;width:0;background:linear-gradient(90deg,#d4af37,#f5d77a);border-radius:8px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+@media(prefers-reduced-motion:reduce){html:not(.fm) *{animation:none!important;transition:none!important}}
+html.nm *{animation:none!important;transition:none!important}
+@media print{#dust,#cg{display:none}}
+
+body{background:radial-gradient(900px 500px at 85% -10%,rgba(212,175,55,.16),transparent),var(--bg)}
+h1,h2,h3,header b{font-family:"Playfair Display","Noto Nastaliq Urdu",serif}
+h2{font-size:clamp(24px,4.5vw,34px);background:linear-gradient(90deg,#d4af37,#f5d77a);-webkit-background-clip:text;background-clip:text;color:transparent}
+header{background:rgba(10,10,10,.72);backdrop-filter:blur(14px);padding:14px 20px}
+header b{font-size:19px;letter-spacing:.5px}
+#tabs{gap:8px;padding:12px 16px}
+.b{border-radius:50px}
+.b.s{border-radius:50px}
+.k,.tw,#m>div,.paper{border-radius:20px}
+.k{background:rgba(255,255,255,.05);backdrop-filter:blur(16px);padding:18px}
+.k b{font:900 24px "Playfair Display",serif}
+.tw{background:rgba(255,255,255,.04);border:1px solid var(--bd);backdrop-filter:blur(14px);padding:6px 10px}
+#m>div{background:rgba(22,20,16,.92);backdrop-filter:blur(18px)}
+.paper{border-radius:12px}
+input,textarea{border-radius:14px;background:rgba(255,255,255,.05)}
+.gold{background:linear-gradient(90deg,#d4af37,#f5d77a,#d4af37);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 4s linear infinite}
+.hero2{padding:30px 2px 26px}
+.hero2 .tg2{display:inline-block;border:1px solid var(--bd);border-radius:50px;padding:4px 16px;color:var(--g2);font-size:13px;margin-bottom:16px}
+.hero2 h1{font-size:clamp(34px,8vw,64px);font-weight:900;line-height:1.2;max-width:820px}
+.hero2 p{color:var(--mu);max-width:520px;margin:14px 0 22px;font-size:17px}
+.mq{direction:ltr;overflow:hidden;border-block:1px solid var(--bd);padding:12px 0;margin-bottom:22px;background:rgba(212,175,55,.06);border-radius:14px}
+.mq div{display:flex;width:max-content;animation:mq 80s linear infinite}
+.mq span{padding:0 22px;white-space:nowrap;color:var(--g2);font:700 16px "Playfair Display","Noto Nastaliq Urdu",serif}
+@keyframes mq{to{transform:translateX(-50%)}}
+
+@media print{
+body{background:#fff!important}
+header,#tabs,main,#dust,#cg,#gate{display:none!important}
+#m{position:static!important;background:none!important;padding:0!important;animation:none!important}
+#m>div{background:none!important;border:0!important;padding:0!important;max-width:none!important;margin:0!important;animation:none!important;backdrop-filter:none!important}
+#inv{position:static!important;width:100%!important;border-radius:0!important}
+tr{animation:none!important;page-break-inside:avoid}
+.paper table{font-size:13px}
+}
+.paper table{width:100%}
+
+.kb{display:inline-block;padding:0 12px;border-radius:50px;background:rgba(212,175,55,.14);border:1px solid var(--bd);color:var(--g2);transition:transform .25s,background .25s}
+tr:hover .kb{transform:scale(1.12);background:rgba(212,175,55,.3)}
+.paper .kb{background:none;border:0;color:inherit;padding:0}
+.blob{position:fixed;border-radius:50%;filter:blur(70px);opacity:.16;z-index:0;pointer-events:none}
+#bl1{width:320px;height:320px;background:#d4af37;top:8%;left:-90px;animation:dr1 19s ease-in-out infinite alternate}
+#bl2{width:280px;height:280px;background:#9a7a1c;bottom:4%;right:-70px;animation:dr2 23s ease-in-out infinite alternate}
+@keyframes dr1{to{transform:translate(65vw,45vh) scale(1.35)}}
+@keyframes dr2{to{transform:translate(-60vw,-40vh) scale(1.25)}}
+td.red{animation:rp 2.2s ease-in-out infinite}
+@keyframes rp{50%{text-shadow:0 0 12px rgba(255,120,100,.8)}}
+#list tr{animation:rw .3s both}
+tr{transition:transform .25s,background .25s}
+tr:hover{transform:translateX(5px)}
+[dir=rtl] tr:hover{transform:translateX(-5px)}
+.b{position:relative;overflow:hidden}
+.rp{position:absolute;border-radius:50%;background:rgba(255,255,255,.5);transform:scale(0);animation:rpl .6s linear forwards;pointer-events:none}
+@keyframes rpl{to{transform:scale(4);opacity:0}}
+@media print{.blob{display:none}tr:hover{transform:none}}
+
+.fl{position:fixed;bottom:-70px;z-index:0;pointer-events:none;opacity:.15;animation:fup linear infinite}
+@keyframes fup{to{transform:translateY(-120vh) rotate(360deg)}}
+.k{position:relative;overflow:hidden}
+.k::after{content:"";position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);transform:skewX(-20deg);animation:sw 4.5s ease-in-out infinite;pointer-events:none}
+@keyframes sw{0%,55%{left:-60%}100%{left:130%}}
+.grid .k{animation:in .6s both,flt 5s ease-in-out .7s infinite}
+.grid .k:nth-child(2n){animation-duration:.6s,6.2s}
+.grid .k:nth-child(3n){animation-duration:.6s,5.6s;animation-direction:normal,reverse}
+@keyframes flt{50%{translate:0 -7px}}
+.bdg{display:inline-block;background:#ff5a4a;color:#fff;border-radius:50px;padding:0 8px;font-size:12px;line-height:20px;animation:wob 2.4s ease-in-out infinite;margin-inline-start:4px}
+@keyframes wob{0%,40%,100%{transform:rotate(0)}8%{transform:rotate(16deg)}16%{transform:rotate(-14deg)}24%{transform:rotate(9deg)}32%{transform:rotate(-6deg)}}
+#prog{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,#d4af37,#f5d77a);z-index:100}
+#mn{background:rgba(212,175,55,.15);border-bottom:1px solid var(--bd);color:var(--g2);padding:8px 16px;font-size:13px;cursor:pointer;text-align:center;position:relative;z-index:3}
+@media print{.fl,#prog,#mn{display:none}}
+
+a.b{text-decoration:none;display:inline-block}
+
+.dg{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:10px;margin-top:8px}
+.dt{background:rgba(255,255,255,.05);border:1px solid var(--bd);border-radius:14px;padding:8px;text-align:center}
+.dt small{display:block;color:var(--mu);font-size:12px;margin:0 0 6px;line-height:1.5}
+.dt img{width:100%;height:84px;object-fit:cover;border-radius:10px;cursor:pointer;display:block;transition:transform .25s}
+.dt img:hover{transform:scale(1.04)}
+.dadd{width:100%;height:84px;border-radius:10px;border:1px dashed var(--g);background:transparent;color:var(--g);font-size:26px;cursor:pointer}
+.dadd:disabled{opacity:.35;cursor:not-allowed}
+figure{break-inside:avoid}
+
+#gate{display:none!important}
+#lgin{position:fixed;inset:0;z-index:80;background:radial-gradient(900px 500px at 80% -10%,rgba(212,175,55,.2),transparent),#0a0a0a;display:grid;place-items:center;padding:20px}
+#lgin>div{max-width:340px;width:100%;text-align:center}
+#lgin h2{margin-bottom:6px}
+#lgin input{margin-top:10px}
+#lgin small{color:var(--mu)}
+
+#stars{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#ayat{position:fixed;inset:0;z-index:0;pointer-events:none;display:grid;place-items:center;padding:24px;text-align:center}
+.ay{max-width:920px;opacity:0;animation:ayc 16s ease-in-out infinite}
+.ay .ar{font:700 clamp(26px,5.5vw,52px)/1.9 "Noto Naskh Arabic","Amiri",serif;color:#d4af37;direction:rtl}
+.ay .ur{font:400 clamp(16px,3vw,24px)/2.2 "Noto Nastaliq Urdu",serif;color:#f5d77a;margin-top:6px;direction:rtl}
+.ay .rf{font-size:13px;color:#a8a392;margin-top:6px}
+@keyframes ayc{0%{opacity:0;transform:translateY(18px)}12%{opacity:.17}78%{opacity:.17}100%{opacity:0;transform:translateY(-18px)}}
+html.noay #ayat{display:none}
+@media(prefers-reduced-motion:reduce){html:not(.fm) .ay{opacity:.14}}
+html.nm .ay{opacity:.14}
+@media print{#stars,#ayat{display:none}}
+
+#ayat{display:none!important}
+.mq:hover div,.mq:active div{animation-play-state:paused}
+.ay2 div{animation-duration:300s;animation-direction:reverse}
+.ay2{background:rgba(212,175,55,.04)}
+.ay2 .ayi{display:inline-flex;direction:rtl;align-items:baseline;gap:16px;padding:0 6px}
+.ay2 .ayi span,.ay2 .ayi b,.ay2 .ayi i{padding:0}
+.ay2 .ara{font:700 20px/1.8 "Noto Naskh Arabic",serif;color:var(--g);direction:rtl;unicode-bidi:isolate}
+.ay2 .ayu{font:400 15px/2 "Noto Nastaliq Urdu",serif;color:var(--tx);direction:rtl;unicode-bidi:isolate}
+.ay2 .ayr{font:400 12px Inter,sans-serif;color:var(--mu);font-style:normal}
+html.noay .ay2{display:none}
+
+.ay2{padding:14px 0}
+.ay2 div{animation-duration:900s}
+.ay2 .ayi{gap:26px;padding:0 10px}
+.ay2 > div > span{padding:0 46px;font-size:22px}
+.ay2 .ara{font:700 30px/2.1 "Noto Naskh Arabic",serif;color:#f5d77a}
+.ay2 .ayu{font:400 20px/2.3 "Noto Nastaliq Urdu",serif;color:#fff7e0}
+.ay2 .ayr{font:400 14px Inter,sans-serif;color:#cfc9b8}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="lgin"><div><h2>⚡ YOUSAF ELECTRONICS</h2><p><small>Login / لاگ اِن</small></p><input id="le" type="email" placeholder="Email / ای میل" autocomplete="username"><input id="lp" type="password" placeholder="Password / پاس ورڈ" autocomplete="current-password"><button class="b p" id="lb" style="width:100%;margin-top:14px">Login / لاگ اِن</button><p id="lerr" class="red" style="margin-top:10px"></p></div></div>
+<canvas id="dust" aria-hidden="true"></canvas><div id="cg" aria-hidden="true"></div>
+<div id="gate"><div><h2 id="gt"></h2><input id="pin" type="password" inputmode="numeric" maxlength="8" style="text-align:center;margin:10px 0"><button class="b p" id="go" style="width:100%"></button><p id="ge" class="red"></p></div></div>
+<header><b>⚡ YOUSAF ELECTRONICS</b><button class="b s" id="lang">اردو</button></header>
+<div id="tabs"></div><main id="main"></main><div id="m"></div>
+<script>
+var T={dash:["Dashboard","ڈیش بورڈ"],cust:["Customers","گاہک"],due:["Due List","واجب الادا فہرست"],stock:["Inventory","اسٹاک"],vend:["Vendors","وینڈرز"],bk:["Backup","بیک اپ"],add:["+ Add","+ شامل کریں"],save:["Save","محفوظ کریں"],cancel:["Cancel","منسوخ"],del:["Delete","حذف"],edit:["Edit","ترمیم"],name:["Name","نام"],phone:["Phone","فون"],cnic:["CNIC","شناختی کارڈ"],addr:["Address","پتہ"],guar:["Guarantor","ضامن"],item:["Item","آئٹم"],total:["Total price","کل قیمت"],adv:["Advance","ایڈوانس"],months:["Months","ماہ"],start:["Start date","شروع کی تاریخ"],paid:["Paid","ادا شدہ"],rem:["Remaining","باقی"],ov:["Overdue","واجب الادا"],mo:["Monthly","ماہانہ قسط"],pay:["+ Payment","+ قسط"],amt:["Amount","رقم"],date:["Date","تاریخ"],full:["Full History","مکمل ہسٹری"],mon:["Monthly History","ماہانہ ہسٹری"],print:["Print","پرنٹ"],close:["Close","بند"],qty:["Qty","تعداد"],cost:["Cost","خریداری"],price:["Price","قیمت"],owed:["Balance owed","واجب رقم"],note:["Notes","نوٹ"],search:["Search...","تلاش..."],coll:["Collected this month","اس ماہ کی وصولی"],recv:["Total receivable","کل وصولی باقی"],ovt:["Total overdue","کل واجب الادا"],low:["Low stock","کم اسٹاک"],vowed:["Owed to vendors","وینڈرز کو دینا"],none:["Nothing here yet","ابھی کچھ نہیں"],sp:["Set a PIN","نیا پن بنائیں"],ep:["Enter PIN","پن درج کریں"],un:["Open","کھولیں"],wp:["Wrong PIN","غلط پن"],req:["Please fill name, total, months and start date","نام، کل قیمت، ماہ اور شروع کی تاریخ بھریں"],cp:["Copy","کاپی"],rs:["Restore","بحال کریں"],bkh:["Copy this text and keep it safe. To restore, paste it here and press Restore.","یہ متن کاپی کر کے محفوظ رکھیں۔ بحال کرنے کے لیے یہاں پیسٹ کر کے بحال کریں دبائیں۔"],sure:["Are you sure?","کیا آپ کو یقین ہے؟"],yes:["Yes","ہاں"],st:["Status","حالت"],nm:["Month","ماہ"],due2:["Due","واجب"],tt:["Total","کل"],bal:["Balance","بقایا"],adv2:["Advance","ایڈوانس"],ok:["Done","ادا"],late:["Late","لیٹ"],cs:["Customers","کل گاہک"],pr:["Payment history","ادائیگیوں کی ہسٹری"]};
+var ur=false,tab="dash",q="",D={c:[],i:[],v:[]},FC;
+try{D=JSON.parse(localStorage.getItem("yd"))||D}catch(e){}
+function sv(){try{localStorage.setItem("yd",JSON.stringify(D))}catch(e){}}
+function t(k){return T[k]?T[k][ur?1:0]:k}
+function $(s){return document.querySelector(s)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function rs(n){return "Rs "+Math.round(n).toLocaleString("en-US")}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function today(){var d=new Date();return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)}
+function fc(id){return D.c.filter(function(c){return c.id==id})[0]}
+function sum(a,f){return a.reduce(function(s,x){return s+f(x)},0)}
+function stat(c){
+  var paid=c.adv+sum(c.pay,function(p){return p.a}),mo=c.months?(c.total-c.adv)/c.months:0,sp=String(c.start).split("-"),d=new Date(+sp[0],+sp[1]-1,+sp[2]||1),n=new Date();
+  var el=(n.getFullYear()-d.getFullYear())*12+n.getMonth()-d.getMonth()-(n.getDate()<d.getDate()?1:0);
+  el=Math.max(0,Math.min(c.months,el));
+  return{paid:paid,rem:Math.max(0,c.total-paid),mo:mo,ov:Math.max(0,c.adv+mo*el-paid)};
+}
+function mk(s,i){var p=s.split("-"),d=new Date(+p[0],+p[1]-1+i,1);return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)}
+function openM(h){$("#m").innerHTML="<div>"+h+"</div>";$("#m").style.display="block"}
+function closeM(){$("#m").style.display="none"}
+function ask(fn){FC={fn:fn};openM("<p>"+t("sure")+"</p><div class=row><button class='b r' onclick='FC.fn();closeM()'>"+t("yes")+"</button><button class=b onclick=closeM()>"+t("cancel")+"</button></div>")}
+function form(title,fields,vals,cb){
+  FC={f:fields,cb:cb};
+  openM("<h2>"+title+"</h2>"+fields.map(function(f){var v=vals[f[0]];return "<label>"+t(f[1])+"<input id='f_"+f[0]+"' type='"+f[2]+"' value='"+esc(v==null?"":v)+"'></label>"}).join("")+"<p id=fe class=red></p><div class=row><button class='b p' onclick=subm()>"+t("save")+"</button><button class=b onclick=closeM()>"+t("cancel")+"</button></div>");
+}
+function subm(){
+  var o={};FC.f.forEach(function(f){var v=$("#f_"+f[0]).value;o[f[0]]=f[2]=="number"?(+v||0):v});
+  if(FC.cb(o)===false){$("#fe").textContent=t("req");return}
+  sv();closeM();render();
+}
+var CF=[["name","name","text"],["phone","phone","tel"],["cnic","cnic","text"],["addr","addr","text"],["guar","guar","text"],["item","item","text"],["total","total","number"],["adv","adv","number"],["months","months","number"],["start","start","date"]];
+function okC(o){return o.name&&o.total>0&&o.months>0}
+function addC(){form(t("cust"),CF,{start:today(),months:12,adv:0},function(o){if(!okC(o))return false;o.id=uid();o.pay=[];D.c.push(o)})}
+function editC(id){var c=fc(id);form(t("edit"),CF,c,function(o){if(!okC(o))return false;Object.assign(c,o)})}
+function delC(id){ask(function(){D.c=D.c.filter(function(c){return c.id!=id});sv();render()})}
+function payC(id){var c=fc(id);form(t("pay"),[["a","amt","number"],["d","date","date"]],{d:today()},function(o){if(!(o.a>0))return false;c.pay.push(o);if($("#m").innerHTML.indexOf("data-det")>-1)setTimeout(function(){det(id)},0)})}
+function delP(id,i){var c=fc(id);ask(function(){c.pay.splice(i,1);sv();det(id)})}
+function acts(id){return "<button class='b s' onclick=\"det('"+id+"')\">"+t("un")+"</button> <button class='b s' onclick=\"invF('"+id+"')\">"+t("full")+"</button> <button class='b s' onclick=\"invM('"+id+"')\">"+t("mon")+"</button> <button class='b s p' onclick=\"payC('"+id+"')\">"+t("pay")+"</button>"}
+function det(id){
+  var c=fc(id),s=stat(c);
+  openM("<span data-det></span><h2>"+esc(c.name)+"</h2><p>"+t("kh")+": <b class=kb>"+esc(c.khata||"—")+"</b><br>"+esc(c.phone)+" · "+esc(c.cnic)+"<br>"+esc(c.addr)+"<br>"+t("guar")+": "+esc(c.guar)+"<br>"+t("item")+": "+esc(c.item)+"</p><div class=grid><div class=k><small>"+t("total")+"</small><b>"+rs(c.total)+"</b></div><div class=k><small>"+t("paid")+"</small><b>"+rs(s.paid)+"</b></div><div class=k><small>"+t("rem")+"</small><b>"+rs(s.rem)+"</b></div><div class=k><small>"+t("mo")+"</small><b>"+rs(s.mo)+"</b></div></div><div class=row>"+acts(id).replace("<button class='b s' onclick=\"det('"+id+"')\">"+t("un")+"</button> ","")+" <button class='b s' onclick=\"editC('"+id+"')\">"+t("edit")+"</button> <button class='b s r' onclick=\"delC('"+id+"')\">"+t("del")+"</button></div><h3 style='margin-top:14px'>"+t("pr")+"</h3><div class=tw><table><tr><th>"+t("date")+"</th><th>"+t("amt")+"</th><th></th></tr><tr><td>"+c.start+"</td><td>"+rs(c.adv)+" ("+t("adv2")+")</td><td></td></tr>"+c.pay.map(function(p,i){return "<tr><td>"+p.d+"</td><td>"+rs(p.a)+"</td><td><button class='b s r' onclick=\"delP('"+id+"',"+i+")\">✕</button></td></tr>"}).join("")+"</table></div><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>");
+}
+function head(c){return "<div id=inv class=paper><h3>YOUSAF ELECTRONICS ⚡</h3><small>Opposite National Bank, Gondal Road, Bharath, Sialkot · 03315000812</small><hr style='margin:8px 0'><p><b>"+esc(c.name)+"</b> · "+esc(c.phone)+"<br>"+t("item")+": "+esc(c.item)+" · "+t("total")+": "+rs(c.total)+"</p>"}
+function tail(id){var s=stat(fc(id));return "<p style='margin-top:10px'><b>"+t("paid")+": "+rs(s.paid)+" · "+t("rem")+": "+rs(s.rem)+"</b></p></div><div class='row np'><button class='b p' onclick=print()>"+t("print")+"</button><button class=b onclick=closeM()>"+t("close")+"</button></div>"}
+function invF(id){
+  var c=fc(id),bal=c.total-c.adv,r="<tr><td>"+c.start+"</td><td>"+rs(c.adv)+" ("+t("adv2")+")</td><td>"+rs(bal)+"</td></tr>";
+  c.pay.slice().sort(function(a,b){return a.d<b.d?-1:1}).forEach(function(p){bal-=p.a;r+="<tr><td>"+p.d+"</td><td>"+rs(p.a)+"</td><td>"+rs(Math.max(0,bal))+"</td></tr>"});
+  openM(head(c)+"<h3>"+t("full")+"</h3><div class=tw><table><tr><th>"+t("date")+"</th><th>"+t("paid")+"</th><th>"+t("bal")+"</th></tr>"+r+"</table></div>"+tail(id));
+}
+function invM(id){
+  var c=fc(id),s=stat(c),now=today().slice(0,7),sm=c.start.slice(0,7),mo=s.mo,r="",td=0,tp=0,cd=0,cp=0,by={};
+  c.pay.forEach(function(p){var k=p.d.slice(0,7);by[k]=(by[k]||0)+p.a});
+  var ks=Object.keys(by).sort(),last=mk(sm,c.months),end=ks.length&&ks[ks.length-1]>last?ks[ks.length-1]:last,first=ks.length&&ks[0]<sm?ks[0]:sm;
+  for(var m=first;m<=end;m=mk(m,1)){
+    var due=m==sm?c.adv:(m>sm&&m<=last?mo:0),pd=(by[m]||0)+(m==sm?c.adv:0);
+    td+=due;tp+=pd;cd+=due;cp+=pd;
+    var st=m>now?"—":(cp>=cd-0.5?"<span class=grn>✓ "+t("ok")+"</span>":"<span class=red>"+t("late")+"</span>");
+    r+="<tr><td>"+m+"</td><td>"+rs(due)+"</td><td>"+rs(pd)+"</td><td>"+st+"</td></tr>";
+  }
+  openM(head(c)+"<h3>"+t("mon")+"</h3><div class=tw><table><tr><th>"+t("nm")+"</th><th>"+t("due2")+"</th><th>"+t("paid")+"</th><th>"+t("st")+"</th></tr>"+r+"<tr><th>"+t("tt")+"</th><th>"+rs(td)+"</th><th>"+rs(tp)+"</th><th></th></tr></table></div>"+tail(id));
+}
+function custRows(list){
+  return list.length?"<div class=tw><table><tr><th>"+t("kh")+"</th><th>"+t("name")+"</th><th>"+t("phone")+"</th><th>"+t("rem")+"</th><th>"+t("ov")+"</th><th></th></tr>"+list.map(function(c){var s=stat(c);return "<tr><td><b class=kb>"+esc(c.khata||"—")+"</b></td><td>"+esc(c.name)+"</td><td>"+esc(c.phone)+"</td><td>"+rs(s.rem)+"</td><td class="+(s.ov>0?"red":"grn")+">"+rs(s.ov)+"</td><td>"+acts(c.id)+"</td></tr>"}).join("")+"</table></div>":"<p>"+t("none")+"</p>";
+}
+function cl(){var k=q.toLowerCase();return custRows(D.c.filter(function(c){return (c.name+c.phone+c.cnic+(c.khata||"")).toLowerCase().indexOf(k)>-1}))}
+function k(l,v){return "<div class=k><small>"+l+"</small><b>"+v+"</b></div>"}
+var V={
+  dash:function(){
+    var m=today().slice(0,7),col=sum(D.c,function(c){return sum(c.pay.filter(function(p){return p.d.slice(0,7)==m}),function(p){return p.a})+(c.start.slice(0,7)==m?c.adv:0)}),
+    ss=D.c.map(stat),od=ss.filter(function(s){return s.ov>0}).length;
+    return "<h2>"+t("dash")+"</h2><div class=grid>"+k(t("cs"),D.c.length)+k(t("coll"),rs(col))+k(t("recv"),rs(sum(ss,function(s){return s.rem})))+k(t("ovt"),rs(sum(ss,function(s){return s.ov}))+" ("+od+")")+k(t("low"),D.i.filter(function(i){return i.qty<=2}).length)+k(t("vowed"),rs(sum(D.v,function(v){return v.owed})))+"</div>";
+  },
+  cust:function(){return "<h2>"+t("cust")+"</h2><div class=bar><input placeholder='"+t("search")+"' value='"+esc(q)+"' oninput=\"q=this.value;$('#list').innerHTML=cl()\"><button class='b p' onclick=addC()>"+t("add")+"</button></div><div id=list>"+cl()+"</div>"},
+  due:function(){return "<h2>"+t("due")+"</h2>"+custRows(D.c.filter(function(c){return stat(c).ov>0}).sort(function(a,b){return stat(b).ov-stat(a).ov}))},
+  stock:function(){
+    return "<h2>"+t("stock")+"</h2><div class=bar><button class='b p' onclick=addI()>"+t("add")+"</button></div>"+(D.i.length?"<div class=tw><table><tr><th>"+t("name")+"</th><th>"+t("qty")+"</th><th>"+t("cost")+"</th><th>"+t("price")+"</th><th></th></tr>"+D.i.map(function(i,n){return "<tr><td>"+esc(i.name)+(i.qty<=2?" <span class=red>⚠ "+t("low")+"</span>":"")+"</td><td><button class='b s' onclick=qt("+n+",-1)>−</button> "+i.qty+" <button class='b s' onclick=qt("+n+",1)>+</button></td><td>"+rs(i.cost)+"</td><td>"+rs(i.price)+"</td><td><button class='b s' onclick=editI("+n+")>"+t("edit")+"</button> <button class='b s r' onclick=delI("+n+")>"+t("del")+"</button></td></tr>"}).join("")+"</table></div>":"<p>"+t("none")+"</p>");
+  },
+  vend:function(){
+    return "<h2>"+t("vend")+"</h2><div class=bar><button class='b p' onclick=addV()>"+t("add")+"</button></div>"+(D.v.length?"<div class=tw><table><tr><th>"+t("name")+"</th><th>"+t("phone")+"</th><th>"+t("owed")+"</th><th>"+t("note")+"</th><th></th></tr>"+D.v.map(function(v,n){return "<tr><td>"+esc(v.name)+"</td><td>"+esc(v.phone)+"</td><td>"+rs(v.owed)+"</td><td>"+esc(v.note)+"</td><td><button class='b s' onclick=editV("+n+")>"+t("edit")+"</button> <button class='b s r' onclick=delV("+n+")>"+t("del")+"</button></td></tr>"}).join("")+"</table></div>":"<p>"+t("none")+"</p>");
+  },
+  bk:function(){return "<h2>"+t("bk")+"</h2><p style='color:var(--mu);margin-bottom:10px'>"+t("bkh")+"</p><textarea id=bt rows=10>"+esc(JSON.stringify(D))+"</textarea><div class=row><button class='b p' onclick=cpy()>"+t("cp")+"</button><button class=b onclick=rest()>"+t("rs")+"</button></div>"}
+};
+var IF=[["name","name","text"],["qty","qty","number"],["cost","cost","number"],["price","price","number"]],VF=[["name","name","text"],["phone","phone","tel"],["owed","owed","number"],["note","note","text"]];
+function nm(o){return o.name?undefined:false}
+function addI(){form(t("stock"),IF,{qty:1},function(o){if(nm(o)===false)return false;D.i.push(o)})}
+function editI(n){form(t("edit"),IF,D.i[n],function(o){if(nm(o)===false)return false;Object.assign(D.i[n],o)})}
+function delI(n){ask(function(){D.i.splice(n,1);sv();render()})}
+function qt(n,d){D.i[n].qty=Math.max(0,D.i[n].qty+d);sv();render()}
+function addV(){form(t("vend"),VF,{},function(o){if(nm(o)===false)return false;D.v.push(o)})}
+function editV(n){form(t("edit"),VF,D.v[n],function(o){if(nm(o)===false)return false;Object.assign(D.v[n],o)})}
+function delV(n){ask(function(){D.v.splice(n,1);sv();render()})}
+function cpy(){var e=$("#bt");e.select();try{navigator.clipboard.writeText(e.value)}catch(x){}}
+function rest(){try{var o=JSON.parse($("#bt").value);if(o.c&&o.i&&o.v){D=o;sv();tab="dash";render()}}catch(e){}}
+function go(x){tab=x;q="";render()}
+function render(){
+  $("#tabs").innerHTML=["dash","cust","due","stock","vend","rep","bk"].map(function(x){return "<button class='b"+(x==tab?" on":"")+"' onclick=go('"+x+"')>"+t(x)+"</button>"}).join("");
+  $("#lang").textContent=ur?"English":"اردو";
+  document.documentElement.dir=ur?"rtl":"ltr";document.documentElement.lang=ur?"ur":"en";
+  $("#main").innerHTML=V[tab]();
+}
+$("#lang").onclick=function(){ur=!ur;render();gateText()};
+var PK="ypin",pinv=null;try{pinv=localStorage.getItem(PK)}catch(e){}
+function gateText(){$("#gt").textContent=pinv?t("ep"):t("sp");$("#go").textContent=pinv?t("un"):t("save")}
+$("#go").onclick=function(){
+  var v=$("#pin").value;
+  if(!pinv){if(v.length<4)return;pinv=v;try{localStorage.setItem(PK,v)}catch(e){}}
+  else if(v!==pinv){$("#ge").textContent=t("wp");return}
+  $("#gate").style.display="none";
+};
+gateText();render();
+</script>
+
+<script>
+(function(){
+  var rm=matchMedia("(prefers-reduced-motion: reduce)").matches,fine=matchMedia("(pointer:fine)").matches;
+  function cnt(root){
+    if(rm)return;
+    root.querySelectorAll(".k b").forEach(function(b){
+      var m=b.textContent.match(/\d[\d,]*/);if(!m)return;
+      var end=+m[0].replace(/,/g,""),txt=b.textContent,t0=performance.now();
+      (function f(n){var p=Math.min(1,(n-t0)/900),v=Math.round(end*(1-Math.pow(1-p,3)));b.textContent=txt.replace(m[0],v.toLocaleString("en-US"));if(p<1)requestAnimationFrame(f)})(t0);
+    });
+  }
+  var _r=render;
+  render=function(){_r();if(tab=="dash")cnt($("#main"))};
+  var _d=det;
+  det=function(id){
+    _d(id);
+    var c=fc(id),s=stat(c),pc=Math.min(100,Math.round(s.paid/c.total*100)),g=$("#m .grid");
+    if(g){g.insertAdjacentHTML("afterend","<div class=pb title='"+pc+"%'><i></i></div>");setTimeout(function(){var i=$("#m .pb i");if(i)i.style.width=pc+"%"},60);cnt($("#m"))}
+  };
+  render();
+  var cv=$("#dust"),cx=cv.getContext("2d"),P=[],W,H,sy=0;
+  function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight}
+  rs();addEventListener("resize",rs);addEventListener("scroll",function(){sy=scrollY},{passive:true});
+  for(var i=0;i<(innerWidth<700?24:46);i++)P.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.8+.5,s:Math.random()*.3+.08,d:Math.random()*.6+.2,a:Math.random()*.4+.15});
+  function dr(){
+    cx.clearRect(0,0,W,H);
+    P.forEach(function(p){
+      p.y-=p.s;p.x+=Math.sin((p.y+p.x)/90)*.25;
+      if(p.y<-5){p.y=H+5;p.x=Math.random()*W}
+      var yy=(p.y-sy*p.d*.2)%H;if(yy<0)yy+=H;
+      cx.beginPath();cx.arc(p.x,yy,p.r,0,6.283);cx.fillStyle="rgba(212,175,55,"+p.a+")";cx.fill();
+    });
+    requestAnimationFrame(dr);
+  }
+  if(!rm)dr();
+  if(fine&&!rm){
+    var cg=$("#cg");
+    addEventListener("pointermove",function(e){cg.style.opacity=1;cg.style.transform="translate("+e.clientX+"px,"+e.clientY+"px)"},{passive:true});
+    document.addEventListener("pointermove",function(e){
+      var k=e.target.closest&&e.target.closest(".k");
+      if(!k)return;
+      var r=k.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;
+      k.style.transition="transform .1s";
+      k.style.transform="perspective(700px) rotateX("+(-y*10)+"deg) rotateY("+(x*10)+"deg) translateY(-4px)";
+    });
+    document.addEventListener("pointerout",function(e){var k=e.target.closest&&e.target.closest(".k");if(k){k.style.transition="";k.style.transform=""}});
+  }
+})();
+</script>
+
+<script>
+(function(){
+  T.h1=["Every customer record,","آپ کے گاہکوں کا ہر ریکارڈ،"];T.h2=["safe & digital.","محفوظ اور ڈیجیٹل۔"];
+  T.hp=["Installments, stock, vendors and invoices, all in one place.","قسطیں، اسٹاک، وینڈرز اور انوائسز، سب ایک جگہ۔"];
+  T.tg=["Private · Shop use only","نجی · صرف دکان کے استعمال کے لیے"];
+  var _dash=V.dash;
+  V.dash=function(){
+    var m=[t("cust"),t("due"),t("stock"),t("vend"),t("full"),t("mon")],one=m.map(function(x){return "<span>"+x+"</span><span>⚡</span>"}).join("");
+    return "<div class=hero2><span class=tg2>"+t("tg")+"</span><h1>"+t("h1")+" <span class=gold>"+t("h2")+"</span></h1><p>"+t("hp")+"</p><div class=row><button class='b p' onclick=\"go('cust')\">"+t("cust")+"</button><button class=b onclick=\"go('due')\">"+t("due")+"</button></div></div><div class=mq aria-hidden=true><div>"+one+one+"</div></div>"+_dash();
+  };
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.demo1=["Load 150 test customers","150 ٹیسٹ گاہک شامل کریں"];T.demo2=["Remove test data","ٹیسٹ ڈیٹا ہٹائیں"];
+  var FN=["Ahmed","Ali","Usman","Bilal","Hassan","Hamza","Imran","Kashif","Waqas","Shahid","Tariq","Rashid","Zubair","Naveed","Adnan","Faisal","Irfan","Saad","Asif","Nadeem","Ayesha","Fatima","Sana","Rabia","Nazia"];
+  var LN=["Khan","Butt","Malik","Chaudhry","Ansari","Raza","Sheikh","Gill","Mirza","Qureshi","Iqbal","Cheema","Bajwa","Javed","Akhtar"];
+  var AR=["Gondal Road","Bharath","Model Town","Cantt","Kashmir Road","Paris Road","Daska Road","Sialkot City"];
+  var IT=[["LED TV 32 inch",45000],["Refrigerator",85000],["AC 1.5 Ton",130000],["Washing Machine",55000],["Water Dispenser",38000],["Microwave Oven",28000],["Deep Freezer",95000],["Ceiling Fan",12000],["Geyser",32000],["Smartphone",60000]];
+  function R(a){return a[Math.floor(Math.random()*a.length)]}
+  function ri(a,b){return a+Math.floor(Math.random()*(b-a+1))}
+  function ds(d){return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)}
+  function nm(){return R(FN)+" "+R(LN)}
+  window.loadDemo=function(){
+    var now=new Date(),ts=today();
+    for(var n=0;n<150;n++){
+      var it=R(IT),total=Math.round(it[1]*(0.9+Math.random()*.3)/500)*500,months=R([6,9,12,12,18,24]),adv=Math.round(total*(.1+Math.random()*.2)/500)*500;
+      var st=new Date(now.getFullYear(),now.getMonth()-ri(0,13),ri(1,28)),c={id:uid()+n,d:1,name:nm(),phone:"03"+ri(0,4)+ri(0,9)+ri(1000000,9999999),cnic:"34603-"+ri(1000000,9999999)+"-"+ri(1,9),addr:ri(1,200)+", "+R(AR)+", Sialkot",guar:nm()+" (03"+ri(0,4)+ri(0,9)+ri(1000000,9999999)+")",item:it[0],total:total,adv:adv,months:months,start:ds(st),pay:[]};
+      var mo=(total-adv)/months,good=Math.random();
+      for(var i=1;i<=months;i++){
+        var d=new Date(st.getFullYear(),st.getMonth()+i,Math.min(28,st.getDate()+ri(0,4)));
+        if(ds(d)>ts)break;
+        var r=Math.random();
+        if(r<(good>.25?.88:.4))c.pay.push({d:ds(d),a:Math.round(mo)});
+        else if(r<(good>.25?.94:.55))c.pay.push({d:ds(d),a:Math.round(mo/2)});
+      }
+      var pd=c.adv+sum(c.pay,function(x){return x.a});
+      while(pd>c.total&&c.pay.length){var ex=pd-c.total,l=c.pay[c.pay.length-1];if(l.a>ex){l.a-=ex;pd=c.total}else{pd-=l.a;c.pay.pop()}}
+      D.c.push(c);
+    }
+    ["LED TV 32 inch","Refrigerator","AC 1.5 Ton","Washing Machine","Water Dispenser","Microwave Oven","Deep Freezer","Ceiling Fan","Geyser","Smartphone"].forEach(function(x,i){var p=IT[i][1];D.i.push({id:uid(),d:1,name:x,qty:ri(0,12),cost:Math.round(p*.8),price:p})});
+    for(var v=0;v<6;v++)D.v.push({d:1,name:R(["Haier","Dawlance","PEL","Orient","Samsung","Gree","TCL","Waves"])+" Dealer "+(v+1),phone:"03"+ri(0,4)+ri(0,9)+ri(1000000,9999999),owed:ri(0,40)*5000,note:"Test vendor"});
+    sv();tab="dash";render();
+  };
+  window.clearDemo=function(){
+    ask(function(){D.c=D.c.filter(function(c){return !c.d});D.i=D.i.filter(function(c){return !c.d});D.v=D.v.filter(function(c){return !c.d});sv();render()});
+  };
+  var _bk=V.bk;
+  V.bk=function(){return "<div class=row style='margin:0 0 16px'><button class='b p' onclick=loadDemo()>"+t("demo1")+"</button><button class='b r' onclick=clearDemo()>"+t("demo2")+"</button></div>"+_bk()};
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.prd=["Print Due List","واجب الادا فہرست پرنٹ کریں"];T.dl=["List of Due Customers","واجب الادا گاہکوں کی فہرست"];
+  var IU=false,_rs=rs;
+  rs=function(n){return IU?Math.round(n).toLocaleString("en-US")+" روپے":_rs(n)};
+  function hdr(){return "<h3 style='text-align:center'>یوسف الیکٹرانکس ⚡</h3><p style='text-align:center'><small>نیشنل بینک کے سامنے، گوندل روڈ، بھڑتھ، سیالکوٹ · 03315000812</small></p><hr style='margin:8px 0'>"}
+  head=function(c){return "<div id=inv class=paper>"+hdr()+"<p><b>"+t("kh")+": "+esc(c.khata||"—")+" · گاہک: "+esc(urName(c))+"</b> · "+esc(c.phone)+"<br>"+t("item")+": "+esc(c.item)+" · "+t("total")+": "+rs(c.total)+"<br>تاریخ: "+today()+"</p>"}
+  function fixUr(){
+    var pp=$("#inv");
+    if(pp){pp.dir="rtl";pp.style.fontFamily="'Noto Nastaliq Urdu',serif";pp.style.lineHeight="2.2"}
+    var bx=$("#m>div");if(bx)bx.dir="rtl";
+  }
+  function urdu(f){return function(a){var o=ur;ur=true;IU=true;try{f(a)}finally{ur=o;IU=false}fixUr()}}
+  invF=urdu(invF);invM=urdu(invM);
+  printDue=urdu(function(){
+    var L=D.c.map(function(c){return{c:c,s:stat(c)}}).filter(function(x){return x.s.ov>0}).sort(function(a,b){return b.s.ov-a.s.ov});
+    var body=L.length?"<table><tr><th>#</th><th>"+t("kh")+"</th><th>"+t("name")+"</th><th>"+t("phone")+"</th><th>"+t("item")+"</th><th>"+t("mo")+"</th><th>"+t("ov")+"</th><th>"+t("rem")+"</th></tr>"+L.map(function(x,i){return "<tr><td>"+(i+1)+"</td><td><b>"+esc(x.c.khata||"—")+"</b></td><td>"+esc(urName(x.c))+"</td><td>"+esc(x.c.phone)+"</td><td>"+esc(x.c.item)+"</td><td>"+rs(x.s.mo)+"</td><td><b>"+rs(x.s.ov)+"</b></td><td>"+rs(x.s.rem)+"</td></tr>"}).join("")+"<tr><th colspan=6>"+t("tt")+" ("+L.length+" گاہک)</th><th>"+rs(sum(L,function(x){return x.s.ov}))+"</th><th>"+rs(sum(L,function(x){return x.s.rem}))+"</th></tr></table>":"<p>"+t("none")+"</p>";
+    openM("<div id=inv class=paper>"+hdr()+"<h3>"+t("dl")+"</h3><p>تاریخ: "+today()+"</p><div class=tw style='background:none;border:0;padding:0'>"+body+"</div></div><div class='row np'><button class='b p' onclick=print()>"+t("print")+"</button><button class=b onclick=closeM()>"+t("close")+"</button></div>");
+  });
+  var _due=V.due;
+  V.due=function(){return _due().replace("</h2>","</h2><div class=bar><button class='b p' onclick=printDue()>🖨 "+t("prd")+"</button></div>")};
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  function nz(v){return String(v||"").replace(/[\u06F0-\u06F9]/g,function(d){return d.charCodeAt(0)-0x06F0}).replace(/[\u0660-\u0669]/g,function(d){return d.charCodeAt(0)-0x0660}).replace(/\s/g,"")}
+  function go2(){
+    var v=nz($("#pin").value);
+    if(!pinv){if(v.length<4){$("#ge").textContent="4+ / ۴ ہندسے";return}pinv=v;try{localStorage.setItem(PK,v)}catch(e){}}
+    else if(v!==nz(pinv)){$("#ge").textContent=t("wp");return}
+    $("#ge").textContent="";$("#gate").style.display="none";$("#pin").value="";
+  }
+  $("#go").onclick=go2;
+  $("#pin").addEventListener("keydown",function(e){if(e.key=="Enter")go2()});
+  $("#gate div").insertAdjacentHTML("beforeend","<p style='margin-top:14px'><a href='#' id=fg style='color:var(--mu);font-size:13px'>Forgot PIN? / پن بھول گئے؟</a></p>");
+  var armed=false;
+  $("#fg").onclick=function(e){
+    e.preventDefault();
+    if(!armed){armed=true;this.textContent="Tap again to reset PIN (data stays safe) / پن ری سیٹ کے لیے دوبارہ دبائیں (ڈیٹا محفوظ رہے گا)";return}
+    try{localStorage.removeItem(PK)}catch(x){}
+    pinv=null;armed=false;this.textContent="Forgot PIN? / پن بھول گئے؟";$("#ge").textContent="";$("#pin").value="";gateText();
+  };
+})();
+</script>
+
+<script>
+(function(){
+  T.over=["Amount is more than the remaining balance","رقم باقی بقایا سے زیادہ ہے"];
+  T.advb=["Advance cannot be more than total price","ایڈوانس کل قیمت سے زیادہ نہیں ہو سکتا"];
+  T.badbk=["This backup text is not valid","یہ بیک اپ متن درست نہیں ہے"];
+  subm=function(){
+    var o={};FC.f.forEach(function(f){var v=$("#f_"+f[0]).value;o[f[0]]=f[2]=="number"?(+v||0):v});
+    FC.msg="";
+    if(FC.cb(o)===false){$("#fe").textContent=FC.msg||t("req");return}
+    sv();closeM();render();
+  };
+  okC=function(o){
+    if(!(o.name&&o.total>0&&o.months>0&&o.months%1==0&&o.months<=120&&/^\d{4}-\d{2}-\d{2}$/.test(o.start)))return false;
+    if(o.adv<0||o.adv>o.total){FC.msg=t("advb");return false}
+    return true;
+  };
+  payC=function(id){
+    var c=fc(id),fromDet=$("#m").innerHTML.indexOf("data-det")>-1;
+    form(t("pay"),[["a","amt","number"],["d","date","date"]],{d:today()},function(o){
+      if(!(o.a>0))return false;
+      if(o.a>stat(c).rem+0.5){FC.msg=t("over");return false}
+      c.pay.push(o);
+      if(fromDet)setTimeout(function(){det(id)},0);
+    });
+  };
+  rest=function(){
+    var o;
+    try{o=JSON.parse($("#bt").value);if(!(o&&o.c&&o.i&&o.v))throw 0}
+    catch(e){openM("<p class=red>"+t("badbk")+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>");return}
+    ask(function(){D=o;sv();tab="dash";render()});
+  };
+})();
+</script>
+
+<script>
+(function(){
+  window.printDueL=function(l){
+    var o=ur,U=l=="ur";ur=U;
+    try{
+      var fm=function(n){var x=Math.round(n).toLocaleString("en-US");return U?x+" روپے":"Rs "+x};
+      var L=D.c.map(function(c){return{c:c,s:stat(c)}}).filter(function(x){return x.s.ov>0}).sort(function(a,b){return b.s.ov-a.s.ov});
+      var hd=U?"<h3 style='text-align:center'>یوسف الیکٹرانکس ⚡</h3><p style='text-align:center'><small>نیشنل بینک کے سامنے، گوندل روڈ، بھڑتھ، سیالکوٹ · 03315000812</small></p>":"<h3 style='text-align:center'>Yousaf Electronics ⚡</h3><p style='text-align:center'><small>Opposite National Bank, Gondal Road, Bharath, Sialkot · 03315000812</small></p>";
+      var body=L.length?"<table><tr><th>#</th><th>"+t("kh")+"</th><th>"+t("name")+"</th><th>"+t("phone")+"</th><th>"+t("item")+"</th><th>"+t("mo")+"</th><th>"+t("ov")+"</th><th>"+t("rem")+"</th></tr>"+L.map(function(x,i){return "<tr><td>"+(i+1)+"</td><td><b>"+esc(x.c.khata||"—")+"</b></td><td>"+(U?esc(urName(x.c)):esc(x.c.name))+"</td><td>"+esc(x.c.phone)+"</td><td>"+esc(x.c.item)+"</td><td>"+fm(x.s.mo)+"</td><td><b>"+fm(x.s.ov)+"</b></td><td>"+fm(x.s.rem)+"</td></tr>"}).join("")+"<tr><th colspan=6>"+t("tt")+" ("+L.length+(U?" گاہک":" customers")+")</th><th>"+fm(sum(L,function(x){return x.s.ov}))+"</th><th>"+fm(sum(L,function(x){return x.s.rem}))+"</th></tr></table>":"<p>"+t("none")+"</p>";
+      openM("<div id=inv class=paper>"+hd+"<hr style='margin:8px 0'><h3>"+t("dl")+"</h3><p>"+(U?"تاریخ: ":"Date: ")+today()+"</p><div class=tw style='background:none;border:0;padding:0'>"+body+"</div></div><div class='row np'><button class='b p' onclick=print()>"+t("print")+"</button><button class=b onclick=closeM()>"+t("close")+"</button></div>");
+      var pp=$("#inv"),bx=$("#m>div");
+      if(pp){pp.dir=U?"rtl":"ltr";pp.style.fontFamily=U?"'Noto Nastaliq Urdu',serif":"Inter,sans-serif";pp.style.lineHeight=U?"2.2":"1.6"}
+      if(bx)bx.dir=U?"rtl":"ltr";
+    }finally{ur=o}
+  };
+  var _d=V.due;
+  V.due=function(){
+    return _d().replace(/<div class=bar>[\s\S]*?<\/div>/,"<div class=bar><button class='b p' onclick=\"printDueL('ur')\">🖨 اردو میں پرنٹ</button><button class='b p' onclick=\"printDueL('en')\">🖨 Print in English</button></div>");
+  };
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.kh=["Khata No.","کھاتہ نمبر"];T.dupk=["This khata number is already used","یہ کھاتہ نمبر پہلے سے استعمال میں ہے"];
+  CF.unshift(["khata","kh","text"]);
+  function nextK(){var m=0;D.c.forEach(function(c){var n=parseInt(c.khata,10);if(n>m)m=n});return String(m+1)}
+  function ensure(){var ch=false;D.c.forEach(function(c){if(c.khata==null||c.khata===""){c.khata=nextK();ch=true}});if(ch)sv()}
+  function dup(o,id){return o.khata&&D.c.some(function(x){return x.id!=id&&String(x.khata).trim()==String(o.khata).trim()})}
+  addC=function(){
+    form(t("cust"),CF,{start:today(),months:12,adv:0,khata:nextK()},function(o){
+      if(!okC(o))return false;
+      if(dup(o,null)){FC.msg=t("dupk");return false}
+      if(!o.khata)o.khata=nextK();
+      o.id=uid();o.pay=[];D.c.push(o);
+    });
+  };
+  editC=function(id){
+    var c=fc(id);
+    form(t("edit"),CF,c,function(o){
+      if(!okC(o))return false;
+      if(dup(o,id)){FC.msg=t("dupk");return false}
+      if(!o.khata)o.khata=c.khata;
+      Object.assign(c,o);
+    });
+  };
+  var _r=render;
+  render=function(){ensure();_r()};
+  if(document.body)document.body.insertAdjacentHTML("afterbegin","<div class=blob id=bl1 aria-hidden=true></div><div class=blob id=bl2 aria-hidden=true></div>");
+  document.addEventListener("pointerdown",function(e){
+    var b=e.target.closest&&e.target.closest(".b");if(!b)return;
+    var r=b.getBoundingClientRect(),d=Math.max(r.width,r.height),sp=document.createElement("span");
+    sp.className="rp";sp.style.cssText="width:"+d+"px;height:"+d+"px;left:"+(e.clientX-r.left-d/2)+"px;top:"+(e.clientY-r.top-d/2)+"px";
+    b.appendChild(sp);setTimeout(function(){sp.remove()},650);
+  });
+  render();
+})();
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+  T.pinreq=["Enter your PIN to confirm","تصدیق کے لیے اپنا پن درج کریں"];T.conf=["Confirm","تصدیق"];
+  T.xl=["📥 Download Excel file","📥 ایکسل فائل ڈاؤن لوڈ کریں"];T.xr=["📤 Restore from Excel","📤 ایکسل سے بحال کریں"];
+  T.lb=["Last backup","آخری بیک اپ"];T.nv=["never","کبھی نہیں"];T.td=["today","آج"];T.dago=["days ago","دن پہلے"];
+  T.noxl=["Excel tool could not load. Check internet and try again.","ایکسل ٹول لوڈ نہیں ہوا۔ انٹرنیٹ چیک کر کے دوبارہ کوشش کریں۔"];
+  T.nodl=["File saving is not available here. Use the copy backup below.","یہاں فائل محفوظ کرنا ممکن نہیں۔ نیچے والا کاپی بیک اپ استعمال کریں۔"];
+  T.saved=["File saved. Keep it somewhere safe (Google Drive, or WhatsApp it to yourself).","فائل محفوظ ہو گئی۔ اسے محفوظ جگہ رکھیں (گوگل ڈرائیو، یا واٹس ایپ پر خود کو بھیج دیں)۔"];
+  T.badx=["This is not a valid backup Excel file","یہ درست بیک اپ ایکسل فائل نہیں ہے"];
+  function nzp(v){return String(v||"").replace(/[\u06F0-\u06F9]/g,function(d){return d.charCodeAt(0)-0x06F0}).replace(/[\u0660-\u0669]/g,function(d){return d.charCodeAt(0)-0x0660}).replace(/\s/g,"")}
+  function msg(x,c){openM("<p class="+c+">"+x+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>")}
+  window.askPin=function(fn){
+    var w=RW?t("rw"):"";RW=0;
+    FC={pf:fn};
+    openM("<h3>"+t("pinreq")+"</h3>"+(w?"<p class=red>"+w+"</p>":"")+"<label>"+t("ep")+"<input id=dp type=password inputmode=numeric maxlength=8 onkeydown=\"if(event.key=='Enter')pinOk()\"></label><p id=de class=red></p><div class=row><button class='b r' onclick=pinOk()>"+t("conf")+"</button><button class=b onclick=closeM()>"+t("cancel")+"</button></div>");
+    setTimeout(function(){var e=$("#dp");if(e&&e.focus)e.focus()},60);
+  };
+  window.pinOk=function(){
+    if(nzp($("#dp").value)!==nzp(pinv)){$("#de").textContent=t("wp");return}
+    var f=FC.pf;closeM();f();
+  };
+  delC=function(id){askPin(function(){D.c=D.c.filter(function(c){return c.id!=id});sv();render()})};
+  delP=function(id,i){var c=fc(id);askPin(function(){c.pay.splice(i,1);sv();det(id)})};
+  rest=function(){
+    var o;
+    try{o=JSON.parse($("#bt").value);if(!(o&&o.c&&o.i&&o.v))throw 0}catch(e){msg(t("badbk"),"red");return}
+    RW=1;askPin(function(){D=o;sv();tab="dash";render()});
+  };
+  function hb(k){return T[k][0]+" / "+T[k][1]}
+  function sh(h,rows,w){var ws=XLSX.utils.aoa_to_sheet([h].concat(rows));ws["!cols"]=h.map(function(x,i){return{wch:w&&w[i]?w[i]:16}});return ws}
+  window.xl=function(){
+    if(typeof XLSX==="undefined"){msg(t("noxl"),"red");return}
+    var wb=XLSX.utils.book_new();
+    var cr=D.c.map(function(c){var s=stat(c);return [c.khata||"",c.name,c.phone,c.cnic,c.addr,c.guar,c.item,c.total,c.adv,c.months,Math.round(s.mo),c.start,Math.round(s.paid),Math.round(s.rem),Math.round(s.ov)]});
+    XLSX.utils.book_append_sheet(wb,sh(["kh","name","phone","cnic","addr","guar","item","total","adv","months","mo","start","paid","rem","ov"].map(hb),cr,[16,22,16,20,30,26,20,12,12,10,12,12,12,12,12]),"Customers");
+    var pr=[];
+    D.c.forEach(function(c){
+      pr.push([c.khata||"",c.name,c.start,c.adv,"Advance / ایڈوانس"]);
+      c.pay.slice().sort(function(a,b){return a.d<b.d?-1:1}).forEach(function(p){pr.push([c.khata||"",c.name,p.d,p.a,"Installment / قسط"])});
+    });
+    XLSX.utils.book_append_sheet(wb,sh(["kh","name","date","amt"].map(hb).concat(["Type / قسم"]),pr,[16,22,14,12,20]),"Payments");
+    var dr=D.c.map(function(c){return{c:c,s:stat(c)}}).filter(function(x){return x.s.ov>0}).sort(function(a,b){return b.s.ov-a.s.ov}).map(function(x){return [x.c.khata||"",x.c.name,x.c.phone,x.c.item,Math.round(x.s.mo),Math.round(x.s.ov),Math.round(x.s.rem)]});
+    XLSX.utils.book_append_sheet(wb,sh(["kh","name","phone","item","mo","ov","rem"].map(hb),dr,[16,22,16,20,14,14,14]),"Due List");
+    XLSX.utils.book_append_sheet(wb,sh(["name","qty","cost","price"].map(hb),D.i.map(function(i){return [i.name,i.qty,i.cost,i.price]}),[24,10,12,12]),"Inventory");
+    XLSX.utils.book_append_sheet(wb,sh(["name","phone","owed","note"].map(hb),D.v.map(function(v){return [v.name,v.phone,v.owed,v.note]}),[24,16,14,24]),"Vendors");
+    var j=JSON.stringify(D),ch=[];for(var i=0;i<j.length;i+=30000)ch.push([j.slice(i,i+30000)]);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ch.length?ch:[[""]]),"DATA");
+    var buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    if(!window.claude||!claude.use){msg(t("nodl"),"red");return}
+    claude.use("downloads").then(function(dl){
+      if(!dl){msg(t("nodl"),"red");return}
+      return dl.save({filename:"Yousaf-Electronics-"+today()+".xlsx",data:buf}).then(function(){
+        try{localStorage.setItem("ylb",String(Date.now()))}catch(e){}
+        msg(t("saved"),"grn");render();
+      });
+    }).catch(function(e){if(e&&e.code=="declined")return;msg(t("nodl"),"red")});
+  };
+  window.xr=function(){
+    if(typeof XLSX==="undefined"){msg(t("noxl"),"red");return}
+    var inp=document.createElement("input");inp.type="file";inp.accept=".xlsx";
+    inp.onchange=function(){
+      var f=inp.files[0];if(!f)return;var r=new FileReader();
+      r.onload=function(){
+        try{
+          var wb=XLSX.read(r.result,{type:"array"}),rows=XLSX.utils.sheet_to_json(wb.Sheets["DATA"],{header:1}),o=JSON.parse(rows.map(function(x){return x[0]||""}).join(""));
+          if(!(o&&o.c&&o.i&&o.v))throw 0;
+          RW=1;askPin(function(){D=o;sv();tab="dash";render()});
+        }catch(e){msg(t("badx"),"red")}
+      };
+      r.readAsArrayBuffer(f);
+    };
+    inp.click();
+  };
+  var _bk=V.bk;
+  V.bk=function(){return "<div class=row style='margin:0 0 16px'><button class='b p' onclick=xl()>"+t("xl")+"</button><button class=b onclick=xr()>"+t("xr")+"</button></div>"+_bk()};
+  var _dd=V.dash;
+  V.dash=function(){
+    var ts=0;try{ts=+localStorage.getItem("ylb")||0}catch(e){}
+    var d=ts?Math.floor((Date.now()-ts)/864e5):-1,w=d<0||d>=7;
+    var b="<div class=k style='margin-bottom:14px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"+(w?";border-color:#ff8a7a":"")+"'><span>"+(w?"⚠ ":"✓ ")+t("lb")+": "+(d<0?t("nv"):d==0?t("td"):d+" "+t("dago"))+"</span><button class='b s p' onclick=xl()>"+t("xl")+"</button></div>";
+    return _dd().replace("<h2>",b+"<h2>");
+  };
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.mn=["Animations are off (your phone's battery saver / reduce-motion setting). Tap here to turn them on ✨","اینیمیشنز بند ہیں (فون کی بیٹری سیور یا ریڈیوس موشن سیٹنگ کی وجہ سے)۔ چلانے کے لیے یہاں دبائیں ✨"];
+  var rm=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function setMo(v){try{localStorage.setItem("ymo",v)}catch(e){}location.reload()}
+  var lg=$("#lang");
+  if(lg){
+    lg.insertAdjacentHTML("beforebegin","<button class='b s' id=mo style='margin-inline-end:8px'>✨ "+(window._mo?"ON":"OFF")+"</button>");
+    $("#mo").onclick=function(){setMo(window._mo?"0":"1")};
+  }
+  if(window._mo0&&localStorage.getItem("ymo")==null){
+    $("#tabs").insertAdjacentHTML("beforebegin","<div id=mn></div>");
+    var mn=$("#mn");mn.textContent=t("mn");mn.onclick=function(){setMo("1")};
+  }
+  var _r=render;
+  render=function(){
+    _r();
+    var n=D.c.filter(function(c){return stat(c).ov>0}).length,bs=document.querySelectorAll("#tabs button");
+    if(bs[2]&&n)bs[2].insertAdjacentHTML("beforeend"," <span class=bdg>"+n+"</span>");
+    var m=$("#mn");if(m)m.textContent=t("mn");
+  };
+  if(!rm&&document.body){
+    var ic=["⚡","📺","❄️","🧾","💰","📒","🔌","⭐","🧺","📱"],h="",N=innerWidth<700?9:16;
+    for(var i=0;i<N;i++)h+="<span class=fl aria-hidden=true style='left:"+Math.round(Math.random()*96)+"%;font-size:"+(20+Math.round(Math.random()*26))+"px;animation-duration:"+(16+Math.round(Math.random()*16))+"s;animation-delay:-"+Math.round(Math.random()*30)+"s'>"+ic[i%ic.length]+"</span>";
+    document.body.insertAdjacentHTML("afterbegin",h+"<div id=prog></div>");
+    var pg=$("#prog");
+    addEventListener("scroll",function(){var d=document.documentElement,x=d.scrollHeight-innerHeight;pg.style.width=(x>0?scrollY/x*100:0)+"%"},{passive:true});
+  }
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.rep=["Reports","رپورٹس"];T.wa=["💬 Reminder","💬 یاد دہانی"];T.imp=["📥 Import from Excel","📥 ایکسل سے گاہک شامل کریں"];T.tpl=["📄 Import template","📄 امپورٹ ٹیمپلیٹ"];
+  T.m6=["Collections: last 6 months","وصولی: پچھلے 6 ماہ"];T.cmp=["Completed accounts","مکمل کھاتے"];T.ovc=["Overdue customers","لیٹ گاہک"];T.sv=["Stock value (cost)","اسٹاک کی لاگت"];T.sr=["Stock value (retail)","اسٹاک کی قیمتِ فروخت"];T.top=["Top overdue","سب سے زیادہ واجب الادا"];T.act=["Activity log","سرگرمی کا ریکارڈ"];T.imd=["Import done","امپورٹ مکمل"];
+  var HU="<h3 style='text-align:center'>یوسف الیکٹرانکس ⚡</h3><p style='text-align:center'><small>نیشنل بینک کے سامنے، گوندل روڈ، بھڑتھ، سیالکوٹ · 03315000812</small></p><hr style='margin:8px 0'>";
+  function fu(n){return Math.round(n).toLocaleString("en-US")+" روپے"}
+  function msg(x,c){openM("<p class="+c+">"+x+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>")}
+  function lg(a,c){D.log=D.log||[];D.log.unshift({t:(function(){var d=new Date();return today()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)})(),a:a,n:c?c.name:"",k:c?c.khata:""});D.log=D.log.slice(0,200)}
+  /* ---- WhatsApp reminder ---- */
+  function waUrl(c){
+    var s=stat(c),ph=String(c.phone||"").replace(/\D/g,"");if(!ph)return"";
+    if(ph[0]=="0")ph="92"+ph.slice(1);else if(ph.length==10&&ph[0]=="3")ph="92"+ph;
+    var m="السلام علیکم "+urName(c)+"،\nکھاتہ نمبر "+(c.khata||"-")+": آپ کی "+fu(s.ov)+" کی قسط واجب الادا ہے۔ (کل باقی رقم "+fu(s.rem)+")\nبراہ کرم جلد ادا کر دیں۔ شکریہ\n— یوسف الیکٹرانکس 03315000812";
+    return ("https://wa.me/"+ph+"?text="+encodeURIComponent(m)).replace(/'/g,"%27");
+  }
+  var _ac=acts;
+  acts=function(id){var c=fc(id),u=c&&stat(c).ov>0?waUrl(c):"";return _ac(id)+(u?" <a class='b s' target=_blank rel=noopener href='"+u+"'>"+t("wa")+"</a>":"")};
+  /* ---- Receipt ---- */
+  window.rcp=function(id,i){
+    var c=fc(id),p=c&&c.pay[i];if(!p)return;
+    var ps=c.adv+sum(c.pay.filter(function(q,j){return q.d<p.d||(q.d==p.d&&j<=i)}),function(q){return q.a}),rem=Math.max(0,c.total-ps);
+    openM("<div id=inv class=paper dir=rtl style=\"font-family:'Noto Nastaliq Urdu',serif;line-height:2.2\">"+HU+"<h3 style='text-align:center'>رسید</h3><p>رسید نمبر: "+esc(c.khata||"0")+"-"+(i+1)+" · تاریخ: "+p.d+"<br>کھاتہ نمبر: "+esc(c.khata||"—")+"<br>گاہک: "+esc(urName(c))+" ("+esc(c.phone)+")<br>آئٹم: "+esc(c.item)+"</p><table><tr><th>وصول شدہ رقم</th><td><b>"+fu(p.a)+"</b></td></tr><tr><th>اب تک کل ادا شدہ</th><td>"+fu(ps)+"</td></tr><tr><th>باقی رقم</th><td><b>"+fu(rem)+"</b></td></tr></table><p style='margin-top:14px'>دستخط: ____________</p></div><div class='row np'><button class='b p' onclick=print()>پرنٹ</button><button class=b onclick=closeM()>بند</button></div>");
+    var bx=$("#m>div");if(bx)bx.dir="rtl";
+  };
+  payC=function(id){
+    var c=fc(id);
+    form(t("pay"),[["a","amt","number"],["d","date","date"]],{d:today()},function(o){
+      if(!(o.a>0))return false;
+      if(o.a>stat(c).rem+0.5){FC.msg=t("over");return false}
+      c.pay.push(o);lg("قسط وصول / Payment "+fu(o.a),c);
+      var i=c.pay.length-1;setTimeout(function(){rcp(id,i)},0);
+    });
+  };
+  /* receipt button on each payment row in customer detail */
+  var _det=det;
+  det=function(id){
+    _det(id);var m=$("#m");if(!m||!m.innerHTML)return;
+    var h=m.innerHTML,k=0;
+    h=h.replace(/<td><button class="b s r" onclick="delP\('([^']+)',(\d+)\)">/g,function(x,a,b){return "<td><button class=\"b s\" onclick=\"rcp('"+a+"',"+b+")\">🧾</button> <button class=\"b s r\" onclick=\"delP('"+a+"',"+b+")\">"});
+    if(h!==m.innerHTML)m.innerHTML=h;
+  };
+  /* ---- audit log on deletes ---- */
+  delC=function(id){var c=fc(id);askPin(function(){lg("حذف گاہک / Delete customer",c);D.c=D.c.filter(function(x){return x.id!=id});sv();render()})};
+  delP=function(id,i){var c=fc(id);askPin(function(){var p=c.pay[i];lg("حذف قسط / Delete installment "+(p?fu(p.a)+" "+p.d:""),c);c.pay.splice(i,1);sv();det(id)})};
+  rest=function(){
+    var o;
+    try{o=JSON.parse($("#bt").value);if(!(o&&o.c&&o.i&&o.v))throw 0}catch(e){msg(t("badbk"),"red");return}
+    RW=1;askPin(function(){D=o;lg("بیک اپ بحال / Restore backup");sv();tab="dash";render()});
+  };
+  /* ---- stock link: suggestions + auto reduce ---- */
+  var _form=form;
+  form=function(title,fields,vals,cb){
+    if(fields===CF&&!vals.id){var _cb=cb;cb=function(o){var n=D.c.length,r=_cb(o);if(r!==false&&D.c.length>n){var it=D.i.filter(function(x){return x.name.toLowerCase()==String(o.item).trim().toLowerCase()})[0];if(it&&it.qty>0)it.qty--}return r}}
+    _form(title,fields,vals,cb);
+    var e=$("#f_item");
+    if(e&&e.setAttribute){e.setAttribute("list","dl_items");e.insertAdjacentHTML("afterend","<datalist id=dl_items>"+D.i.map(function(i){return "<option value='"+esc(i.name)+"'>"}).join("")+"</datalist>")}
+  };
+  /* ---- import old register from Excel ---- */
+  var MAP={khata:"khata",khatano:"khata",khatanumber:"khata",name:"name",customer:"name",phone:"phone",mobile:"phone",cnic:"cnic",id:"cnic",address:"addr",addr:"addr",guarantor:"guar",item:"item",product:"item",total:"total",totalprice:"total",price:"total",advance:"adv",months:"months",installments:"months",start:"start",startdate:"start",date:"start",paid:"paid",paidsofar:"paid"};
+  function nk(k){return String(k).toLowerCase().replace(/[^a-z]/g,"")}
+  function dstr(d){return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)}
+  window.impRows=function(rows){
+    var add=0,skip=0,bad=0;
+    rows.forEach(function(r){
+      var o={};Object.keys(r).forEach(function(k){var m=MAP[nk(k)];if(m)o[m]=r[k]});
+      var total=+o.total,months=+o.months,adv=+o.adv||0;
+      if(!o.name||!(total>0)||!(months>0)||adv<0||adv>total){bad++;return}
+      var kh=o.khata==null?"":String(o.khata).trim();
+      if(kh&&D.c.some(function(c){return String(c.khata)==kh})){skip++;return}
+      var st=today();
+      if(typeof o.start=="number")st=dstr(new Date(Math.round((o.start-25569)*864e5)));
+      else if(o.start){var d=new Date(o.start);if(!isNaN(d))st=/^\d{4}-\d{2}-\d{2}$/.test(String(o.start))?String(o.start):dstr(d)}
+      var c={id:uid()+add,khata:kh,name:String(o.name),phone:(function(x){x=String(x||"").trim();return /^3\d{9}$/.test(x)?"0"+x:x})(o.phone),cnic:String(o.cnic||""),addr:String(o.addr||""),guar:String(o.guar||""),item:String(o.item||""),total:total,adv:adv,months:months,start:st,pay:[]};
+      var pd=Math.min(+o.paid||0,total-adv);if(pd>0)c.pay.push({d:today(),a:pd});
+      D.c.push(c);add++;
+    });
+    sv();render();
+    msg(t("imd")+": +"+add+(skip?" · "+(ur?"دہرے کھاتہ نمبر چھوڑے: ":"skipped duplicate khata: ")+skip:"")+(bad?" · "+(ur?"غلط قطاریں: ":"invalid rows: ")+bad:""),"grn");
+  };
+  window.imp=function(){
+    if(typeof XLSX==="undefined"){msg(t("noxl"),"red");return}
+    var inp=document.createElement("input");inp.type="file";inp.accept=".xlsx,.xls,.csv";
+    inp.onchange=function(){
+      var f=inp.files[0];if(!f)return;var r=new FileReader();
+      r.onload=function(){
+        try{var wb=XLSX.read(r.result,{type:"array"});impRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""}))}catch(e){msg(t("badx"),"red")}
+      };
+      r.readAsArrayBuffer(f);
+    };
+    inp.click();
+  };
+  window.tpl=function(){
+    if(typeof XLSX==="undefined"){msg(t("noxl"),"red");return}
+    var ws=XLSX.utils.aoa_to_sheet([["Khata","Name","Phone","CNIC","Address","Guarantor","Item","Total","Advance","Months","Start","Paid so far"],["101","Ahmed Khan","03001234567","34603-1234567-1","Gondal Road","Ali Khan","LED TV",45000,10000,10,"2026-01-15",5000]]),wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Import");
+    var buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    if(!window.claude||!claude.use){msg(t("nodl"),"red");return}
+    claude.use("downloads").then(function(dl){if(!dl){msg(t("nodl"),"red");return}return dl.save({filename:"customer-import-template.xlsx",data:buf})}).catch(function(e){if(e&&e.code=="declined")return;msg(t("nodl"),"red")});
+  };
+  var _vc=V.cust;
+  V.cust=function(){return _vc().replace("</h2>","</h2><div class=row style='margin:0 0 12px'><button class=b onclick=imp()>"+t("imp")+"</button><button class=b onclick=tpl()>"+t("tpl")+"</button></div>")};
+  /* ---- reports ---- */
+  V.rep=function(){
+    var now=new Date(),rows=[],mx=1;
+    for(var j=5;j>=0;j--){
+      var d=new Date(now.getFullYear(),now.getMonth()-j,1),m=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2);
+      var v=sum(D.c,function(c){return sum(c.pay.filter(function(p){return p.d.slice(0,7)==m}),function(p){return p.a})+(c.start.slice(0,7)==m?c.adv:0)});
+      rows.push([m,v]);if(v>mx)mx=v;
+    }
+    var ss=D.c.map(function(c){return{c:c,s:stat(c)}}),od=ss.filter(function(x){return x.s.ov>0}).sort(function(a,b){return b.s.ov-a.s.ov});
+    var done=ss.filter(function(x){return x.s.rem<=0.5&&x.c.total>0}).length;
+    var sc=sum(D.i,function(i){return i.qty*i.cost}),sr=sum(D.i,function(i){return i.qty*i.price});
+    var bars=rows.map(function(r){return "<div style='margin:8px 0'><small>"+r[0]+" — <b>"+rs(r[1])+"</b></small><div class=pb><i style='width:"+Math.round(r[1]/mx*100)+"%'></i></div></div>"}).join("");
+    var top=od.slice(0,5).map(function(x){return "<tr><td><b class=kb>"+esc(x.c.khata||"—")+"</b></td><td>"+esc(x.c.name)+"</td><td class=red>"+rs(x.s.ov)+"</td></tr>"}).join("");
+    var lgh=(D.log||[]).slice(0,30).map(function(e){return "<tr><td>"+esc(e.t)+"</td><td>"+esc(e.a)+"</td><td>"+esc(e.n)+(e.k?" ("+esc(e.k)+")":"")+"</td></tr>"}).join("");
+    return "<h2>"+t("rep")+"</h2><div class=grid>"+k(t("cust"),D.c.length)+k(t("cmp"),done)+k(t("ovc"),od.length)+k(t("sv"),rs(sc))+k(t("sr"),rs(sr))+k(t("vowed"),rs(sum(D.v,function(v){return v.owed})))+"</div><h3>"+t("m6")+"</h3>"+bars+(top?"<h3 style='margin-top:16px'>"+t("top")+"</h3><div class=tw><table>"+top+"</table></div>":"")+"<h3 style='margin-top:16px'>"+t("act")+"</h3>"+(lgh?"<div class=tw><table>"+lgh+"</table></div>":"<p>"+t("none")+"</p>");
+  };
+  render();
+})();
+</script>
+
+<script>
+(function(){
+  T.syp=["Some data on this phone is not online yet","اس فون کا کچھ ڈیٹا ابھی آن لائن نہیں ہے"];
+  T.sup=["📤 Upload to online","📤 آن لائن بھیجیں"];T.sdc=["Don't upload (use online data only)","نہ بھیجیں (صرف آن لائن ڈیٹا استعمال کریں)"];T.sla=["Decide later","بعد میں فیصلہ کریں"];
+  T.sro=["You can view but not edit the online data. Ask the owner to make you a Contributor.","آپ آن لائن ڈیٹا دیکھ سکتے ہیں مگر بدل نہیں سکتے۔ مالک سے کہیں کہ آپ کو Contributor بنائے۔"];
+  var DB=null,CANW=null,CW=true,READY=false,ERR="",SY={},PEND={},RUN={},Q=[],ACT=0,tm=null,FIRST={c:0,i:0,v:0},_sv=sv;
+  function canon(o){
+    if(o===null||typeof o!="object")return JSON.stringify(o);
+    if(Array.isArray(o))return "["+o.map(canon).join(",")+"]";
+    return "{"+Object.keys(o).sort().filter(function(k){return o[k]!==undefined}).map(function(k){return JSON.stringify(k)+":"+canon(o[k])}).join(",")+"}";
+  }
+  function clone(o){return JSON.parse(JSON.stringify(o))}
+  function ids(){D.i.forEach(function(x){if(!x.id)x.id=uid()});D.v.forEach(function(x){if(!x.id)x.id=uid()})}
+  function cur(){var m={};D.c.forEach(function(c){m["customers/"+c.id]=c});D.i.forEach(function(x){m["stock/"+x.id]=x});D.v.forEach(function(x){m["vendors/"+x.id]=x});m["meta/log"]={items:D.log||[]};return m}
+  function busy(p){return PEND[p]||Q.some(function(x){return x.p==p})}
+  function sst(){
+    var e=$("#sy");if(!e)return;var x;
+    if(!DB)x=["💾","This phone only","صرف اسی فون میں"];
+    else if(!CW)x=["👁","View only","صرف دیکھنے کی اجازت"];
+    else if(ERR&&!ACT&&!Q.length)x=["⚠","Sync problem — will retry","سنک میں مسئلہ، دوبارہ کوشش ہوگی"];
+    else if(!READY)x=["☁","Connecting…","جڑ رہا ہے…"];
+    else if(ACT||Q.length)x=["☁…","Syncing…","محفوظ ہو رہا ہے…"];
+    else x=["☁✓","Saved online","آن لائن محفوظ"];
+    e.textContent=x[0];e.title=x[ur?2:1];
+  }
+  function flush(){
+    if(!DB||!CW||!READY)return;
+    ids();var m=cur();
+    Object.keys(m).forEach(function(p){
+      var o=clone(m[p]),j=canon(o);
+      if(SY[p]===j)return;
+      if(p=="meta/log"&&SY[p]===undefined&&!(D.log&&D.log.length))return;
+      SY[p]=j;Q=Q.filter(function(x){return x.p!=p});Q.push({p:p,o:o});
+    });
+    Object.keys(SY).forEach(function(p){if(!(p in m)){delete SY[p];Q=Q.filter(function(x){return x.p!=p});Q.push({p:p,del:1})}});
+    pump();
+  }
+  function pump(){
+    while(ACT<3){
+      var i=-1;for(var k=0;k<Q.length;k++){if(!RUN[Q[k].p]){i=k;break}}
+      if(i<0)break;
+      var op=Q.splice(i,1)[0];RUN[op.p]=1;PEND[op.p]=(PEND[op.p]||0)+1;ACT++;
+      (function(op){
+        var r;try{r=op.del?DB.doc(op.p).delete():DB.doc(op.p).set(op.o)}catch(e){fin(op,e);return}
+        r.then(function(){fin(op,null)},function(e){fin(op,e||{})});
+      })(op);
+    }
+    sst();
+  }
+  function fin(op,e){
+    delete RUN[op.p];PEND[op.p]--;if(!PEND[op.p])delete PEND[op.p];ACT--;
+    if(e){
+      ERR=e.code||"error";
+      if(op.del)SY[op.p]="retry-delete";else delete SY[op.p];
+      if(e.code=="invalid_argument"){if(CANW===true){SY[op.p]="bad"}else{CW=false;msg(t("sro"),"red")}}
+      else if(e.code!="quota_exceeded"&&e.code!="revoked")setTimeout(flush,6000);
+    }else if(!Q.length&&!ACT)ERR="";
+    pump();
+  }
+  sv=function(){ids();_sv();clearTimeout(tm);tm=setTimeout(flush,500)};
+  function msg(x,c){openM("<p class="+c+">"+x+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>")}
+  function onColl(coll,key,snap){
+    var arr=D[key],ch=false;
+    snap.docChanges().forEach(function(c){
+      var d=c.doc,p=coll+"/"+d.id;if(busy(p))return;
+      if(c.type=="removed"){
+        var n=arr.length;arr=D[key]=arr.filter(function(x){return x.id!=d.id});delete SY[p];if(arr.length!=n)ch=true;return;
+      }
+      var o=clone(d.data());o.id=d.id;
+      if(!/^[A-Za-z0-9_-]+$/.test(d.id))return;
+      var j=canon(o);
+      if(SY[p]===j)return;
+      SY[p]=j;var k=-1;for(var q=0;q<arr.length;q++){if(arr[q].id==d.id){k=q;break}}
+      if(k>=0)arr[k]=o;else arr.push(o);ch=true;
+    });
+    if(!snap.metadata.fromCache)FIRST[key]=1;
+    if(ch){_sv();render()}
+    if(!READY&&FIRST.c&&FIRST.i&&FIRST.v)decide();
+    sst();
+  }
+  function localOnly(){
+    var r={c:[],i:[],v:[]};
+    D.c.forEach(function(x){if(SY["customers/"+x.id]===undefined)r.c.push(x)});
+    D.i.forEach(function(x){if(x.id&&SY["stock/"+x.id]===undefined)r.i.push(x);else if(!x.id)r.i.push(x)});
+    D.v.forEach(function(x){if(x.id&&SY["vendors/"+x.id]===undefined)r.v.push(x);else if(!x.id)r.v.push(x)});
+    return r;
+  }
+  function decide(){
+    if(READY||!DB)return;
+    var lo=localOnly(),n=lo.c.length+lo.i.length+lo.v.length,flag=false;
+    try{flag=localStorage.getItem("ysync")=="1"}catch(e){}
+    if(!n||flag){READY=true;sst();if(n)flush();return}
+    var on=D.c.length-lo.c.length;
+    openM("<h3>"+t("syp")+"</h3><p>"+(ur?"اس فون میں: "+lo.c.length+" گاہک، "+lo.i.length+" اسٹاک آئٹم، "+lo.v.length+" وینڈرز۔ آن لائن پہلے سے: "+on+" گاہک۔":"On this phone: "+lo.c.length+" customers, "+lo.i.length+" stock items, "+lo.v.length+" vendors. Already online: "+on+" customers.")+"</p><div class=row><button class='b p' onclick=syUp()>"+t("sup")+"</button><button class='b r' onclick=syNo()>"+t("sdc")+"</button><button class=b onclick=closeM()>"+t("sla")+"</button></div>");
+  }
+  function done(){try{localStorage.setItem("ysync","1")}catch(e){}READY=true;closeM();sst()}
+  window.syUp=function(){done();flush();render()};
+  window.syNo=function(){
+    askPin(function(){
+      var lo=localOnly(),drop=function(a,b){return a.filter(function(x){return b.indexOf(x)<0})};
+      D.c=drop(D.c,lo.c);D.i=drop(D.i,lo.i);D.v=drop(D.v,lo.v);_sv();done();render();
+    });
+  };
+  var _r=render;
+  render=function(){_r();sst()};
+  var lg=$("#lang");
+  if(lg){lg.insertAdjacentHTML("beforebegin","<span id=sy style='margin-inline-end:10px;cursor:pointer;font-size:14px;color:var(--g2)'></span>");$("#sy").onclick=function(){if(DB&&!READY)decide()}}
+  sst();
+  if(window.claude&&claude.use){
+    claude.use("db").then(function(db){
+      if(!db){sst();return}
+      DB=db;sst();
+      claude.use("user").then(function(u){return u&&u.can?u.can("data.write"):null}).then(function(v){CANW=v;if(v===false){CW=false;sst();msg(t("sro"),"red")}},function(){});
+      var bad=function(){ERR="error";sst()};
+      db.collection("customers").onSnapshot(function(s){onColl("customers","c",s)},bad);
+      db.collection("stock").onSnapshot(function(s){onColl("stock","i",s)},bad);
+      db.collection("vendors").onSnapshot(function(s){onColl("vendors","v",s)},bad);
+      db.doc("meta/log").onSnapshot(function(s){
+        if(busy("meta/log")||!s.exists)return;
+        var o=clone(s.data()),j=canon(o);
+        if(SY["meta/log"]===j)return;
+        SY["meta/log"]=j;D.log=o.items||[];_sv();
+      },bad);
+    },function(){sst()});
+  }
+})();
+</script>
+<script>var RW=0;T.rw=["Restoring replaces ALL current data (including online data) with the backup.","بحال کرنے سے موجودہ تمام ڈیٹا (آن لائن سمیت) بیک اپ والے ڈیٹا سے بدل جائے گا۔"];</script>
+
+<script>
+(function(){
+  T.ddoc=["Documents","دستاویزات"];T.dph=["Customer photo","گاہک کی تصویر"];T.dcf=["CNIC front","شناختی کارڈ (سامنے)"];T.dcb=["CNIC back","شناختی کارڈ (پیچھے)"];
+  T.dgp=["Guarantor photo","ضامن کی تصویر"];T.dgf=["Guarantor CNIC front","ضامن شناختی کارڈ (سامنے)"];T.dgb=["Guarantor CNIC back","ضامن شناختی کارڈ (پیچھے)"];
+  T.dag=["Agreement papers","معاہدے کے کاغذات"];T.dadp=["Add page","صفحہ شامل کریں"];T.dupl=["Uploading…","اپلوڈ ہو رہا ہے…"];
+  T.dnoas=["Upload is not available right now. Please log in again.","اپلوڈ ابھی دستیاب نہیں۔ دوبارہ لاگ اِن کریں۔"];T.dok=["Upload ready","اپلوڈ تیار ہے"];T.dfail=["Upload failed","اپلوڈ ناکام ہوا"];
+  T.dbig=["File is too large","فائل بہت بڑی ہے"];T.dfull=["Storage is full. Delete old files first.","اسٹوریج بھر گیا ہے۔ پہلے پرانی فائلیں ہٹائیں۔"];T.dbad=["Could not read this image","یہ تصویر پڑھی نہیں جا سکی"];
+  T.dsv=["⬇ Save to phone","⬇ فون میں محفوظ کریں"];T.drep=["Replace","بدلیں"];T.dpr=["🖨 Print documents","🖨 دستاویزات پرنٹ کریں"];T.dbk=["Back","واپس"];
+  var AS=null;
+  function stTxt(){return window.UPLOAD_MSG?"⚠ "+window.UPLOAD_MSG:(AS?"✅ "+t("dok"):"⚠ "+t("dnoas"))}
+  if(window.claude&&claude.use)claude.use("assets").then(function(a){AS=a;var e=$("#dst");if(e)e.textContent=stTxt()},function(){});
+  function okId(x){return typeof x=="string"&&/^[0-9a-f]{32}$/.test(x)}
+  var SL=[["photo","dph"],["cnicF","dcf"],["cnicB","dcb"],["gPhoto","dgp"],["gCnicF","dgf"],["gCnicB","dgb"]];
+  function msg2(x,c){openM("<p class="+c+">"+x+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>")}
+  function emsg(e){var c=e&&e.code,m0=String(e&&e.message||"");if(/bucket not found/i.test(m0))return "Storage bucket docs is missing. Run SQL part 2 (or create a private bucket named docs). / اسٹوریج docs موجود نہیں۔ SQL کا حصہ 2 چلائیں (یا docs نام کا نجی bucket بنائیں)۔";if(/row-level security|policy/i.test(m0))return "No permission to upload. Check your profile role and SQL part 2. / اپلوڈ کی اجازت نہیں۔ اپنا کردار اور SQL حصہ 2 دیکھیں۔";return c=="too_large"?t("dbig"):c=="quota_or_state"?t("dfull"):c=="bad"?t("dbad"):(c=="not_granted"||c=="capability_removed"||c=="capability_disabled")?t("dnoas")+" ("+c+")":t("dfail")+" ("+(c||"error")+(e&&e.message?": "+e.message:"")+")"}
+  function kill(ids){if(!AS)return;ids.forEach(function(id){try{AS.delete(id).catch(function(){})}catch(e){}})}
+  function imgIds(c){var im=c&&c.img||{},r=[];SL.forEach(function(x){if(okId(im[x[0]]))r.push(im[x[0]])});(im.agr||[]).forEach(function(a){if(a&&okId(a.i))r.push(a.i)});return r}
+  function pick(cb,pdf){var i=document.createElement("input");i.type="file";i.accept=pdf?"image/*,application/pdf":"image/*";i.onchange=function(){if(i.files&&i.files[0])cb(i.files[0])};i.click()}
+  function shrink(file,max,q){
+    return new Promise(function(res,rej){
+      var fr=new FileReader();
+      fr.onload=function(){
+        var im=new Image();
+        im.onload=function(){
+          var sc=Math.min(1,max/Math.max(im.width,im.height)),cv=document.createElement("canvas");
+          cv.width=Math.max(1,Math.round(im.width*sc));cv.height=Math.max(1,Math.round(im.height*sc));
+          cv.getContext("2d").drawImage(im,0,0,cv.width,cv.height);
+          cv.toBlob(function(b){b?res(b):rej()},"image/jpeg",q);
+        };
+        im.onerror=rej;im.src=fr.result;
+      };
+      fr.onerror=rej;fr.readAsDataURL(file);
+    });
+  }
+  function getId(c,k,idx){
+    var im=c&&c.img||{};
+    if(k=="agr"){var a=(im.agr||[])[idx];return a&&okId(a.i)?{id:a.i,pdf:a.t=="pdf"}:null}
+    return okId(im[k])?{id:im[k],pdf:false}:null;
+  }
+  window.docsHtml=function(c){
+    var im=c.img||{},h="<h3 style='margin-top:14px'>"+t("ddoc")+"</h3>"+"<p id=dst style='color:var(--mu);font-size:13px'>"+stTxt()+"</p>"+"<div class=dg>";
+    SL.forEach(function(x){
+      var id=im[x[0]];
+      h+="<div class=dt><small>"+t(x[1])+"</small>"+(okId(id)?"<img alt='' data-b='"+id+"' onclick=\"dview('"+c.id+"','"+x[0]+"')\">":"<button class=dadd onclick=\"dadd('"+c.id+"','"+x[0]+"')\">＋</button>")+"</div>";
+    });
+    h+="</div><h3 style='margin-top:12px'>"+t("dag")+"</h3><div class=dg>";
+    (im.agr||[]).forEach(function(a,i){
+      if(!a||!okId(a.i))return;
+      h+="<div class=dt>"+(a.t=="pdf"?"<button class=dadd onclick=\"dview('"+c.id+"','agr',"+i+")\">📄</button>":"<img alt='' data-b='"+a.i+"' onclick=\"dview('"+c.id+"','agr',"+i+")\">")+"<small style='margin:6px 0 0'>"+(i+1)+"</small></div>";
+    });
+    h+="<div class=dt><small>"+t("dadp")+"</small><button class=dadd onclick=\"dadd('"+c.id+"','agr')\">＋</button></div></div><div class=row><button class='b s' onclick=\"dprint('"+c.id+"')\">"+t("dpr")+"</button></div>";
+    return h;
+  };
+  function up(cid,k,file,rep){
+    var c=fc(cid);if(!c||!AS)return;
+    var pdf=file.type=="application/pdf";
+    openM("<p>"+t("dupl")+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>");
+    var p=pdf?Promise.resolve(file):shrink(file,k=="agr"?1800:1400,k=="agr"?.8:.72);
+    p.then(function(b){return AS.upload(b,{type:pdf?"application/pdf":"image/jpeg"})},function(){throw{code:"bad"}}).then(function(r){
+      c.img=c.img||{};
+      if(k=="agr"){
+        c.img.agr=c.img.agr||[];var e={i:r.id,t:pdf?"pdf":"img"};
+        if(rep&&rep.idx>=0&&c.img.agr[rep.idx])c.img.agr[rep.idx]=e;else c.img.agr.push(e);
+      }else c.img[k]=r.id;
+      if(rep&&rep.old)kill([rep.old]);
+      sv();det(cid);
+    }).catch(function(e){msg2(emsg(e),"red")});
+  }
+  window.dadd=function(cid,k){
+    var go=function(){pick(function(f){up(cid,k,f,null)},k=="agr")};
+    if(AS){go();return}
+    if(!(window.claude&&claude.use)){msg2(t("dnoas"),"red");return}
+    claude.use("assets").then(function(a){AS=a;if(a)go();else msg2(t("dnoas"),"red")},function(e){msg2(t("dnoas")+" ("+((e&&e.code)||"error")+")","red")});
+  };
+  window.dview=function(cid,k,idx){
+    var c=fc(cid),g=getId(c,k,idx);if(!g)return;
+    var ix=idx==null?-1:idx;
+    openM("<div style='text-align:center'>"+(g.pdf?"<p><a class='b p' target=_blank rel=noopener data-bh='"+g.id+"' href='#'>📄 PDF</a></p>":"<img alt='' data-b='"+g.id+"' style='max-width:100%;max-height:60vh;border-radius:12px'>")+"</div><div class=row><button class=b onclick=\"det('"+cid+"')\">"+t("dbk")+"</button><button class=b onclick=\"dsave('"+cid+"','"+k+"',"+ix+")\">"+t("dsv")+"</button>"+(AS?"<button class=b onclick=\"drep('"+cid+"','"+k+"',"+ix+")\">"+t("drep")+"</button>":"")+"<button class='b r' onclick=\"ddel('"+cid+"','"+k+"',"+ix+")\">"+t("del")+"</button></div>");
+  };
+  window.ddel=function(cid,k,idx){
+    askPin(function(){
+      var c=fc(cid),g=getId(c,k,idx);if(!c||!g)return;
+      if(k=="agr")c.img.agr.splice(idx,1);else delete c.img[k];
+      kill([g.id]);sv();det(cid);
+    });
+  };
+  window.drep=function(cid,k,idx){
+    askPin(function(){
+      var c=fc(cid),g=getId(c,k,idx);if(!c||!g)return;
+      pick(function(f){up(cid,k,f,{old:g.id,idx:idx})},k=="agr");
+    });
+  };
+  window.dsave=function(cid,k,idx){
+    var c=fc(cid),g=getId(c,k,idx);if(!g)return;
+    blobUrl(g.id).then(function(u){return fetch(u)}).then(function(r){return r.blob()}).then(function(b){return b.arrayBuffer().then(function(buf){return{buf:buf,type:b.type}})}).then(function(o){
+      return claude.use("downloads").then(function(dl){
+        if(!dl)throw 0;
+        return dl.save({filename:String(c.khata||"doc").replace(/[^\w-]/g,"")+"-"+k+(idx>=0?"-"+(idx+1):"")+(o.type=="application/pdf"?".pdf":".jpg"),data:o.buf});
+      });
+    }).catch(function(e){if(e&&e.code=="declined")return;msg2(t("nodl"),"red")});
+  };
+  window.dprint=function(cid){
+    var c=fc(cid),im=c&&c.img||{};if(!c)return;
+    var h="<div id=inv class=paper><h3>"+esc(c.name)+" — "+t("kh")+": "+esc(c.khata||"—")+"</h3><div style='display:flex;flex-wrap:wrap;gap:10px'>";
+    SL.forEach(function(x){if(okId(im[x[0]]))h+="<figure style='width:48%;margin:0'><img alt='' data-b='"+im[x[0]]+"' style='width:100%'><figcaption><small>"+t(x[1])+"</small></figcaption></figure>"});
+    (im.agr||[]).forEach(function(a,i){if(a&&okId(a.i)&&a.t!="pdf")h+="<figure style='width:100%;margin:0'><img alt='' data-b='"+a.i+"' style='width:100%'><figcaption><small>"+t("dag")+" "+(i+1)+"</small></figcaption></figure>"});
+    h+="</div></div><div class='row np'><button class='b p' onclick=print()>"+t("print")+"</button><button class=b onclick=\"det('"+cid+"')\">"+t("dbk")+"</button></div>";
+    openM(h);
+  };
+  var _det=det;
+  det=function(id){
+    _det(id);
+    var c=fc(id),box=$("#m>div");if(!c||!box||!box.querySelector)return;
+    var h3=box.querySelector("h3");
+    if(h3&&h3.insertAdjacentHTML)h3.insertAdjacentHTML("beforebegin",docsHtml(c));
+  };
+  var _dc=delC;
+  delC=function(id){
+    var c=fc(id),ids=imgIds(c),ap=window.askPin;
+    window.askPin=function(fn){window.askPin=ap;ap(function(){fn();kill(ids)})};
+    try{_dc(id)}finally{window.askPin=ap}
+  };
+})();
+</script>
+
+<script>
+(function(){
+  var X=window.SBX,sb=X&&X.sb,ROLE=null,EMAIL="";
+  T.pw=["Password","پاس ورڈ"];T.rp=["Enter your password to confirm","تصدیق کے لیے اپنا پاس ورڈ لکھیں"];T.wpw=["Wrong password","غلط پاس ورڈ"];
+  T.own=["Only the owner can do this","یہ کام صرف مالک کر سکتا ہے"];
+  function say(x){var e=$("#lerr");if(e)e.textContent=x}
+  function msg(x,c){openM("<p class="+c+">"+x+"</p><div class=row><button class=b onclick=closeM()>"+t("close")+"</button></div>")}
+  if(!sb){say(X&&!X.cfgOk?"Setup incomplete: put your Supabase URL and key at the top of this file. / سیٹ اپ مکمل نہیں: فائل کے اوپر اپنا Supabase URL اور key لکھیں۔":"Could not load Supabase. Check internet. / Supabase لوڈ نہیں ہوا، انٹرنیٹ چیک کریں۔");return}
+  function enter(user){
+    return sb.from("profiles").select("role").eq("id",user.id).then(function(p){
+      if(p.error||!p.data||!p.data.length){say("No access for this account. Ask the owner. / اس اکاؤنٹ کو رسائی نہیں، مالک سے کہیں۔");return sb.auth.signOut().then(function(){})}
+      var last=null;try{last=localStorage.getItem("ylu")}catch(e){}
+      if(last&&last!=user.id){try{["yd","ysync","ylb"].forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("ylu",user.id)}catch(e){}location.reload();return}
+      try{localStorage.setItem("ylu",user.id)}catch(e){}
+      ROLE=p.data[0].role;EMAIL=user.email||"";
+      X.afterLogin(user,ROLE);
+      $("#lgin").style.display="none";
+      var lg=$("#lang");
+      if(lg&&lg.insertAdjacentHTML&&!$("#lo")){
+        lg.insertAdjacentHTML("beforebegin","<span style='font-size:12px;color:var(--mu);margin-inline-end:8px'>"+(ROLE=="owner"?"👑 ":"👤 ")+EMAIL.split("@")[0]+"</span><button class='b s' id=lo title='Logout' style='margin-inline-end:8px'>🚪</button>");
+        $("#lo").onclick=function(){try{["yd","ysync","ylb","ylu"].forEach(function(k){localStorage.removeItem(k)})}catch(e){}sb.auth.signOut().then(function(){location.reload()})};
+      }
+    });
+  }
+  $("#lb").onclick=function(){
+    say("");
+    sb.auth.signInWithPassword({email:$("#le").value.trim(),password:$("#lp").value}).then(function(r){
+      if(r.error){say("Wrong email or password. / ای میل یا پاس ورڈ غلط ہے۔");return}
+      return enter(r.data.user);
+    });
+  };
+  $("#lp").addEventListener("keydown",function(e){if(e.key=="Enter")$("#lb").onclick()});
+  sb.auth.getSession().then(function(r){if(r.data&&r.data.session)return enter(r.data.session.user)});
+  /* deletes: owner only, and the owner re-types the account password */
+  window.askPin=function(fn){
+    if(ROLE!="owner"){msg(t("own"),"red");return}
+    FC={pf:fn};
+    openM("<h3>"+t("rp")+"</h3><label>"+t("pw")+"<input id=dp type=password onkeydown=\"if(event.key=='Enter')pinOk()\"></label><p id=de class=red></p><div class=row><button class='b r' onclick=pinOk()>"+t("conf")+"</button><button class=b onclick=closeM()>"+t("cancel")+"</button></div>");
+    setTimeout(function(){var e=$("#dp");if(e&&e.focus)e.focus()},60);
+  };
+  window.pinOk=function(){
+    var pw=$("#dp").value;
+    return sb.auth.signInWithPassword({email:EMAIL,password:pw}).then(function(r){
+      if(r.error){$("#de").textContent=t("wpw");return}
+      var f=FC.pf;closeM();f();
+    });
+  };
+  /* private photos: swap placeholders for short-lived signed links */
+  function hyd(){
+    var els=[].slice.call(document.querySelectorAll("[data-b],[data-bh]")).filter(function(e){return e.dataset.done!=(e.dataset.b||e.dataset.bh)});
+    if(!els.length)return;
+    var ids=[];els.forEach(function(e){var i=e.dataset.b||e.dataset.bh;if(ids.indexOf(i)<0)ids.push(i)});
+    sb.storage.from("docs").createSignedUrls(ids,3600).then(function(r){
+      var m={};(r.data||[]).forEach(function(x){if(x.signedUrl)m[x.path]=x.signedUrl});
+      els.forEach(function(e){var i=e.dataset.b||e.dataset.bh;if(!m[i])return;if(e.dataset.b)e.src=m[i];else{e.href=m[i];e.target="_blank"}e.dataset.done=i});
+    });
+  }
+  if(typeof MutationObserver!="undefined"){var mo=$("#m");if(mo&&mo.nodeType)new MutationObserver(hyd).observe(mo,{childList:true,subtree:true})}
+})();
+</script>
+
+<script>
+(function(){
+  /* ============ 1) Urdu name (auto transliteration, editable) ============ */
+  T.nameur=["Name in Urdu (auto-filled, editable)","اردو میں نام (خود بخود، بدل سکتے ہیں)"];
+  T.ay=["Ayat line","آیات والی لائن"];
+  var ND={ahmed:"احمد",ahmad:"احمد",muhammad:"محمد",mohammad:"محمد",muhammed:"محمد",mohammed:"محمد",mohd:"محمد",md:"محمد",ali:"علی",hassan:"حسن",hasan:"حسن",hussain:"حسین",hussein:"حسین",husain:"حسین",usman:"عثمان",osman:"عثمان",umar:"عمر",omar:"عمر",bilal:"بلال",hamza:"حمزہ",imran:"عمران",kashif:"کاشف",waqas:"وقاص",shahid:"شاہد",tariq:"طارق",tarik:"طارق",rashid:"راشد",zubair:"زبیر",naveed:"نوید",adnan:"عدنان",faisal:"فیصل",irfan:"عرفان",saad:"سعد",asif:"آصف",nadeem:"ندیم",ayesha:"عائشہ",aisha:"عائشہ",fatima:"فاطمہ",sana:"ثناء",rabia:"رابعہ",nazia:"نازیہ",khan:"خان",butt:"بٹ",malik:"ملک",chaudhry:"چوہدری",choudhry:"چوہدری",chaudhary:"چوہدری",ch:"چوہدری",ansari:"انصاری",raza:"رضا",sheikh:"شیخ",shaikh:"شیخ",gill:"گل",mirza:"مرزا",qureshi:"قریشی",iqbal:"اقبال",cheema:"چیمہ",bajwa:"باجوہ",javed:"جاوید",jawed:"جاوید",akhtar:"اختر",abdul:"عبد",abdullah:"عبداللہ",rehman:"رحمٰن",rahman:"رحمٰن",ashraf:"اشرف",aslam:"اسلم",akram:"اکرم",amjad:"امجد",anwar:"انور",arshad:"ارشد",ghulam:"غلام",hafeez:"حفیظ",hafiz:"حافظ",haider:"حیدر",ibrahim:"ابراہیم",ismail:"اسماعیل",jamil:"جمیل",kamran:"کامران",khalid:"خالد",liaqat:"لیاقت",majid:"ماجد",mansoor:"منصور",mehmood:"محمود",mahmood:"محمود",mukhtar:"مختار",mushtaq:"مشتاق",naeem:"نعیم",nasir:"ناصر",noman:"نعمان",nauman:"نعمان",qasim:"قاسم",rafiq:"رفیق",rizwan:"رضوان",sajid:"ساجد",saleem:"سلیم",salim:"سلیم",salman:"سلمان",shabbir:"شبیر",shafiq:"شفیق",sohail:"سہیل",suhail:"سہیل",sultan:"سلطان",tahir:"طاہر",waseem:"وسیم",yaseen:"یاسین",younas:"یونس",yunus:"یونس",yousaf:"یوسف",yousuf:"یوسف",yusuf:"یوسف",zafar:"ظفر",zahid:"زاہد",zeeshan:"ذیشان",shahzad:"شہزاد",sarfraz:"سرفراز",saeed:"سعید",riaz:"ریاض",rana:"رانا",sardar:"سردار",syed:"سید",sayed:"سید",shah:"شاہ",bibi:"بی بی",begum:"بیگم",bushra:"بشریٰ",saima:"صائمہ",sadia:"سعدیہ",samina:"ثمینہ",shazia:"شازیہ",uzma:"عظمیٰ",zainab:"زینب",maryam:"مریم",mariam:"مریم",khadija:"خدیجہ",hina:"حنا",nargis:"نرگس",rubina:"روبینہ",farah:"فرح",amna:"آمنہ",asma:"اسماء",naila:"نائلہ",kiran:"کرن",sobia:"صوبیہ",mehwish:"مہوش",shahbaz:"شہباز",shehzad:"شہزاد",farooq:"فاروق",hanif:"حنیف",ijaz:"اعجاز",ejaz:"اعجاز",nawaz:"نواز",sharif:"شریف",shakeel:"شکیل",sabir:"صابر",sikandar:"سکندر",tanveer:"تنویر",wasim:"وسیم",zulfiqar:"ذوالفقار",ahsan:"احسن",azhar:"اظہر",babar:"بابر",danish:"دانش",fahad:"فہد",fiaz:"فیاض",haroon:"ہارون",junaid:"جنید",kamal:"کمال",luqman:"لقمان",mazhar:"مظہر",moin:"معین",qamar:"قمر",rehan:"ریحان",sami:"سمیع",talha:"طلحہ",usama:"اسامہ",wahid:"واحد",zain:"زین",zeeshaan:"ذیشان"};
+  var DG={sh:"ش",kh:"خ",gh:"غ",ch:"چ",ph:"ف",zh:"ژ",th:"تھ",dh:"دھ",bh:"بھ",jh:"جھ",kk:"ک",ss:"س",ll:"ل",tt:"ٹ",dd:"ڈ",nn:"ن",mm:"م"};
+  var CS={b:"ب",p:"پ",t:"ت",j:"ج",d:"د",r:"ر",z:"ز",s:"س",f:"ف",q:"ق",k:"ک",g:"گ",l:"ل",m:"م",n:"ن",v:"و",w:"و",h:"ہ",x:"کس",c:"ک"};
+  function isV(c){return "aeiou".indexOf(c)>=0}
+  function phon(w){
+    var s=w.toLowerCase().replace(/[^a-z]/g,""),o="",i=0,n=s.length;
+    while(i<n){
+      var c=s[i],two=s.substr(i,2),prevV=i>0&&isV(s[i-1]),last=i==n-1;
+      if(DG[two]&&two[0]!=two[1]){o+=DG[two];i+=2;continue}
+      if(two[0]==two[1]&&CS[c]){o+=CS[c];i+=2;continue}
+      if(c=="y"){o+=(i==0||isV(s[i+1]||"")?"ی":"ی");i++;continue}
+      if(isV(c)){
+        if(i==0){o+=(two=="aa"?"آ":"ا");i+=(two=="aa"?2:1);continue}
+        if(two=="aa"){o+="ا";i+=2;continue}
+        if(two=="ee"||two=="ea"){o+="ی";i+=2;continue}
+        if(two=="oo"||two=="ou"){o+="و";i+=2;continue}
+        if(two=="ai"||two=="ay"){o+="ی";i+=2;continue}
+        if(last){o+=(c=="a"?"ا":c=="e"?"ے":c=="i"?"ی":"و");i++;continue}
+        if(c=="i"||c=="e"){o+="ی";i++;continue}
+        if(c=="o"||c=="u"){o+="و";i++;continue}
+        i++;continue;
+      }
+      o+=CS[c]||"";i++;
+    }
+    return o;
+  }
+  function hasAr(x){return /[\u0600-\u06FF]/.test(x)}
+  window.urName=function(c){
+    if(!c)return "";
+    var u=String(c.nameUr||"").trim();if(u)return u;
+    var n=String(c.name||"").trim();if(!n||hasAr(n))return n;
+    return n.split(/\s+/).map(function(tk){var k=tk.toLowerCase().replace(/[^a-z]/g,"");return ND[k]||(k?phon(k):tk)}).join(" ");
+  };
+  if(typeof CF!="undefined"&&!CF.some(function(f){return f[0]=="nameUr"}))CF.splice(2,0,["nameUr","nameur","text"]);
+  var _form3=form;
+  form=function(title,fields,vals,cb){
+    _form3(title,fields,vals,cb);
+    if(fields!==CF)return;
+    var n=$("#f_name"),u=$("#f_nameUr");
+    if(!(n&&u&&n.addEventListener))return;
+    if(!u.value&&vals.name)u.value=urName(vals);
+    n.addEventListener("change",function(){if(!u.value.trim()||u.dataset.auto=="1"){u.value=urName({name:n.value});u.dataset.auto="1"}});
+    u.addEventListener("input",function(){u.dataset.auto="0"});
+  };
+
+  /* ============ 2) moving stars ============ */
+  var rm=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(document.body)document.body.insertAdjacentHTML("afterbegin","<canvas id=stars aria-hidden=true></canvas>");
+  var cv=$("#stars");
+  if(cv&&cv.getContext&&!rm){
+    var cx=cv.getContext("2d"),W=0,H=0,S=[],SH=null,nx=0;
+    var rs2=function(){W=cv.width=innerWidth;H=cv.height=innerHeight};rs2();addEventListener("resize",rs2);
+    var N=innerWidth<700?42:80;
+    for(var i=0;i<N;i++)S.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.7+.5,vx:(Math.random()-.5)*.22,vy:-(Math.random()*.16+.02),ph:Math.random()*6.28,ts:Math.random()*1.6+.5,sp:Math.random()<.2});
+    var spark=function(x,y,r){cx.beginPath();cx.moveTo(x,y-r);cx.quadraticCurveTo(x,y,x+r,y);cx.quadraticCurveTo(x,y,x,y+r);cx.quadraticCurveTo(x,y,x-r,y);cx.quadraticCurveTo(x,y,x,y-r);cx.fill()};
+    var frame=function(now){
+      if(document.hidden){requestAnimationFrame(frame);return}
+      cx.clearRect(0,0,W,H);var t=now/1000;
+      S.forEach(function(p){
+        p.x+=p.vx;p.y+=p.vy;
+        if(p.y<-8){p.y=H+8;p.x=Math.random()*W}
+        if(p.x<-8)p.x=W+8;if(p.x>W+8)p.x=-8;
+        var a=.18+.7*(.5+.5*Math.sin(t*p.ts+p.ph));
+        cx.globalAlpha=a;cx.fillStyle=p.sp?"#f5d77a":"#d4af37";
+        if(p.sp)spark(p.x,p.y,p.r*4.2);else{cx.beginPath();cx.arc(p.x,p.y,p.r,0,6.283);cx.fill()}
+      });
+      if(!SH&&now>nx){SH={x:Math.random()*W*.7+W*.1,y:Math.random()*H*.35,l:0};nx=now+5000+Math.random()*6000}
+      if(SH){
+        SH.x+=9;SH.y+=4.5;SH.l+=1;
+        var g=cx.createLinearGradient(SH.x,SH.y,SH.x-90,SH.y-45);
+        g.addColorStop(0,"rgba(245,215,122,"+Math.max(0,1-SH.l/45)+")");g.addColorStop(1,"rgba(245,215,122,0)");
+        cx.globalAlpha=1;cx.strokeStyle=g;cx.lineWidth=2;cx.beginPath();cx.moveTo(SH.x,SH.y);cx.lineTo(SH.x-90,SH.y-45);cx.stroke();
+        if(SH.l>45)SH=null;
+      }
+      cx.globalAlpha=1;requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  /* ============ 3) rotating business ayat in the background ============ */
+  /* Edit this list to add/remove verses: [Arabic, Urdu meaning, reference] */
+  var AYAT=window.AYAT=[
+   ["وَأَحَلَّ اللَّهُ الْبَيْعَ وَحَرَّمَ الرِّبَا","اور اللہ نے خرید و فروخت کو حلال کیا اور سود کو حرام کیا","سورۃ البقرہ، آیت 275"],
+   ["لَا تَأْكُلُوا أَمْوَالَكُم بَيْنَكُم بِالْبَاطِلِ إِلَّا أَن تَكُونَ تِجَارَةً عَن تَرَاضٍ مِّنكُمْ","آپس میں ایک دوسرے کا مال ناحق نہ کھاؤ، مگر یہ کہ تجارت ہو آپس کی رضامندی سے","سورۃ النساء، آیت 29"],
+   ["إِذَا تَدَايَنتُم بِدَيْنٍ إِلَىٰ أَجَلٍ مُّسَمًّى فَاكْتُبُوهُ","جب تم کسی مقررہ مدت تک ادھار کا لین دین کرو تو اسے لکھ لیا کرو","سورۃ البقرہ، آیت 282"],
+   ["وَإِن كَانَ ذُو عُسْرَةٍ فَنَظِرَةٌ إِلَىٰ مَيْسَرَةٍ","اور اگر کوئی تنگ دست ہو تو اسے آسانی ہونے تک مہلت دو","سورۃ البقرہ، آیت 280"],
+   ["وَيْلٌ لِّلْمُطَفِّفِينَ","ہلاکت ہے ناپ تول میں کمی کرنے والوں کے لیے","سورۃ المطففین، آیت 1"],
+   ["وَأَوْفُوا الْكَيْلَ إِذَا كِلْتُمْ وَزِنُوا بِالْقِسْطَاسِ الْمُسْتَقِيمِ","اور جب ناپو تو پورا ناپو، اور سیدھی ترازو سے تولو","سورۃ الاسراء، آیت 35"],
+   ["فَإِذَا قُضِيَتِ الصَّلَاةُ فَانتَشِرُوا فِي الْأَرْضِ وَابْتَغُوا مِن فَضْلِ اللَّهِ","پھر جب نماز پوری ہو جائے تو زمین میں پھیل جاؤ اور اللہ کا فضل تلاش کرو","سورۃ الجمعہ، آیت 10"],
+   ["رِجَالٌ لَّا تُلْهِيهِمْ تِجَارَةٌ وَلَا بَيْعٌ عَن ذِكْرِ اللَّهِ","ایسے مرد جنہیں تجارت اور خرید و فروخت اللہ کے ذکر سے غافل نہیں کرتی","سورۃ النور، آیت 37"],
+   ["يَا أَيُّهَا الَّذِينَ آمَنُوا أَوْفُوا بِالْعُقُودِ","اے ایمان والو! اپنے عہد و پیمان پورے کرو","سورۃ المائدہ، آیت 1"],
+   ["وَأَقِيمُوا الْوَزْنَ بِالْقِسْطِ وَلَا تُخْسِرُوا الْمِيزَانَ","اور انصاف کے ساتھ وزن قائم رکھو اور ترازو میں کمی نہ کرو","سورۃ الرحمٰن، آیت 9"],
+   ["وَيَرْزُقْهُ مِنْ حَيْثُ لَا يَحْتَسِبُ","اور اسے وہاں سے رزق دیتا ہے جہاں سے اسے گمان بھی نہ ہو","سورۃ الطلاق، آیت 3"],
+   ["إِنَّ اللَّهَ يَأْمُرُكُمْ أَن تُؤَدُّوا الْأَمَانَاتِ إِلَىٰ أَهْلِهَا","بے شک اللہ تمہیں حکم دیتا ہے کہ امانتیں ان کے حق داروں تک پہنچا دو","سورۃ النساء، آیت 58"]
+  ];
+  AYAT.push(
+   ["وَأَحْسِنُوا إِنَّ اللَّهَ يُحِبُّ الْمُحْسِنِينَ","اور نیکی کرو، بے شک اللہ نیکی کرنے والوں سے محبت کرتا ہے","سورۃ البقرہ، آیت 195"],
+   ["وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا","اور جو اللہ سے ڈرتا ہے اللہ اس کے لیے نکلنے کا راستہ بنا دیتا ہے","سورۃ الطلاق، آیت 2"],
+   ["لَئِن شَكَرْتُمْ لَأَزِيدَنَّكُمْ","اگر تم شکر کرو گے تو میں تمہیں ضرور اور زیادہ دوں گا","سورۃ ابراہیم، آیت 7"],
+   ["فَإِنَّ مَعَ الْعُسْرِ يُسْرًا إِنَّ مَعَ الْعُسْرِ يُسْرًا","بے شک مشکل کے ساتھ آسانی ہے، بے شک مشکل کے ساتھ آسانی ہے","سورۃ الانشراح، آیت 5 اور 6"],
+   ["وَمَا مِن دَابَّةٍ فِي الْأَرْضِ إِلَّا عَلَى اللَّهِ رِزْقُهَا","اور زمین پر چلنے والا کوئی جاندار نہیں مگر اس کا رزق اللہ کے ذمے ہے","سورۃ ہود، آیت 6"],
+   ["وَالَّذِينَ إِذَا أَنفَقُوا لَمْ يُسْرِفُوا وَلَمْ يَقْتُرُوا وَكَانَ بَيْنَ ذَٰلِكَ قَوَامًا","اور وہ جب خرچ کرتے ہیں تو نہ فضول خرچی کرتے ہیں نہ تنگی، اور ان کے درمیان اعتدال ہوتا ہے","سورۃ الفرقان، آیت 67"],
+   ["وَأَوْفُوا بِالْعَهْدِ إِنَّ الْعَهْدَ كَانَ مَسْئُولًا","اور عہد پورا کرو، بے شک عہد کے بارے میں پوچھا جائے گا","سورۃ الاسراء، آیت 34"],
+   ["وَالَّذِينَ هُمْ لِأَمَانَاتِهِمْ وَعَهْدِهِمْ رَاعُونَ","اور جو اپنی امانتوں اور اپنے عہد کی حفاظت کرنے والے ہیں","سورۃ المؤمنون، آیت 8"],
+   ["اعْدِلُوا هُوَ أَقْرَبُ لِلتَّقْوَىٰ","انصاف کرو، یہی تقویٰ کے زیادہ قریب ہے","سورۃ المائدہ، آیت 8"],
+   ["أَوْفُوا الْكَيْلَ وَلَا تَكُونُوا مِنَ الْمُخْسِرِينَ","ناپ پورا دو اور کمی کرنے والوں میں سے نہ ہو جاؤ","سورۃ الشعراء، آیت 181"]
+  );
+  var ai=Math.floor(Math.random()*AYAT.length),H2=document.documentElement;
+  try{if(localStorage.getItem("yay")=="0")H2.classList.add("noay")}catch(e){}
+  var showAyat=function(){
+    var a=AYAT[ai%AYAT.length];ai++;
+    var e=$("#ayat .ay");if(!e)return;
+    e.style.animation="none";if(e.offsetWidth!==undefined)void e.offsetWidth;
+    e.innerHTML="<div class=ar>"+a[0]+"</div><div class=ur>"+a[1]+"</div><div class=rf>"+a[2]+"</div>";
+    e.style.animation="";
+  };
+  showAyat();
+  if(!rm)setInterval(showAyat,16000);
+  var lg=$("#lang");
+  if(lg&&lg.insertAdjacentHTML&&!$("#ayb")){
+    lg.insertAdjacentHTML("beforebegin","<button class='b s' id=ayb title='"+T.ay[0]+" / "+T.ay[1]+"' style='margin-inline-end:8px'>📖</button>");
+    $("#ayb").onclick=function(){
+      var off=H2.classList.toggle("noay");
+      try{localStorage.setItem("yay",off?"0":"1")}catch(e){}
+    };
+  }
+  /* ayat line: slow scrolling strip under the first line (Arabic + Urdu meaning + reference) */
+  var _dashA=V.dash;
+  V.dash=function(){
+    var h=_dashA(),one=AYAT.map(function(a){return "<span class=ayi><b class=ara>"+a[0]+"</b><span class=ayu>"+a[1]+"</span><i class=ayr>"+a[2]+"</i></span><span>✦</span>"}).join(""),
+        strip="<div class='mq ay2'><div>"+one+one+"</div></div>";
+    return h.replace(/(<div class=mq[\s\S]*?<\/span><\/div><\/div>)/,function(m){return m+strip});
+  };
+  render();
+})();
+</script>
+</body>
+</html>
